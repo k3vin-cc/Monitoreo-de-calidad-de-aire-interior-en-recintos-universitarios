@@ -1,0 +1,54 @@
+# Datos, credenciales y configuración local
+**/secrets.h
+**/.env
+**/.env.*
+!**/.env.example
+*.kubeconfig
+kubeconfig*
+k8s/certs/
+*.key
+*.pem
+*.p12
+*.pfx
+datos_*.csv
+REPORTE_IMPLEMENTACION_KUBERNETES.md
+KUBERNETES_CONTEXTO.md
+CAMBIOS_PENDIENTES_TEX.md
+PLAN_IMPLEMENTACION_KUBERNETES.md
+openapi_etapa2.yaml
+
+# Salidas de compilación y dependencias
+.tools/
+.venv/
+.local/
+build-*/
+**/build/
+**/build-*/
+**/node_modules/
+**/dist/
+**/__pycache__/
+*.pyc
+*.kicad_prl
+*.bin
+*.elf
+*.map
+*.hex
+*.log
+*.aux
+*.out
+
+# Manifiestos generados de fuentes y artefactos locales
+k8s/02-db-init.yaml
+k8s/04-api-code.yaml
+k8s/05-web-core.yaml
+k8s/05-web-assets.yaml
+k8s/05-web-files.yaml
+
+# Documentos binarios generados localmente
+contenido/*.pdf
+FLUJO_DATOS_ESP32_Y_SELECCION_BD.pdf
+
+# Datos operacionales locales
+*.sqlite
+*.db
+firmwares/

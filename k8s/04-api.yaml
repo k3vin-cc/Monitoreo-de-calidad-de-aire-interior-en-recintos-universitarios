@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calidad-api
+  namespace: aira
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: calidad-api
+  template:
+    metadata:
+      labels:
+        app: calidad-api
+    spec:
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: api
+          image: python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              python -m pip install --disable-pip-version-check --no-cache-dir --target=/tmp/python-libs -r /app/requirements.txt
+              && PYTHONPATH=/tmp/python-libs python -m uvicorn main:app --host 0.0.0.0 --port 8000
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: calidad-secrets
+          env:
+            - name: DB_HOST
+              value: calidad-db
+            - name: DB_NAME
+              value: postgres
+            - name: DB_USER
+              value: postgres
+            - name: MQTT_HOST
+              value: calidad-mqtt
+            - name: MQTT_USERNAME
+              value: api
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: calidad-secrets
+                  key: MQTT_INTERNAL_PASSWORD
+            - name: FIRMWARE_DIR
+              value: /data/firmwares
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: CORS_ORIGINS
+              value: http://localhost:5173,http://127.0.0.1:5173
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 400m
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: api-code
+              mountPath: /app
+              readOnly: true
+            - name: firmwares
+              mountPath: /data/firmwares
+      volumes:
+        - name: api-code
+          configMap:
+            name: calidad-api-code
+            defaultMode: 0444
+        - name: firmwares
+          # Fallback temporal: el proveedor de almacenamiento alcanzó su cuota
+          # global (students-host-envelope: PVC 25/25), por lo que el claim
+          # calidad-firmwares-pvc permanece Pending y el Pod no puede programarse.
+          # Cambiar a persistentVolumeClaim cuando el proveedor libere capacidad.
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: calidad-api
+  namespace: aira
+spec:
+  type: ClusterIP
+  selector:
+    app: calidad-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP

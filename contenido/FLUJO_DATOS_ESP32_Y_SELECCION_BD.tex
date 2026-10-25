@@ -1,0 +1,446 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish,es-tabla,es-noshorthands]{babel}
+\usepackage[margin=2.0cm,top=2.2cm,bottom=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs,tabularx,colortbl,array}
+\usepackage[table]{xcolor}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,calc,decorations.pathreplacing}
+
+% Paleta de colores sobria e institucional
+\definecolor{primary}{RGB}{16, 44, 87}       % Azul marino institucional
+\definecolor{secondary}{RGB}{53, 95, 142}    % Azul secundario
+\definecolor{accent}{RGB}{205, 83, 52}       % Terracota acento
+\definecolor{bglight}{RGB}{248, 249, 250}    % Gris fondo muy tenue
+\definecolor{borderlight}{RGB}{220, 224, 230}% Borde gris
+\definecolor{codebg}{RGB}{244, 246, 248}     % Fondo de código
+\definecolor{successgreen}{RGB}{40, 140, 70} % Verde óptimo
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primary,
+    urlcolor=secondary,
+    citecolor=primary
+}
+
+% Encabezados y pies de página
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{\color{primary}Sistema IoT de Monitoreo Ambiental} \textbar\ Arquitectura y Fundamentación}
+\fancyhead[R]{\small\color{gray}ESP32 $\rightarrow$ TimescaleDB}
+\fancyfoot[L]{\small\color{gray}Proyecto AIRA -- Documentación técnica}
+\fancyfoot[R]{\small\textbf{\thepage} de \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.6pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Configuración de listados de código
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{borderlight},
+    breaklines=true,
+    tabsize=2,
+    showstringspaces=false,
+    keywordstyle=\color{primary}\bfseries,
+    stringstyle=\color{accent},
+    commentstyle=\color{gray}\itshape,
+    numbers=none
+}
+
+% Cajas de advertencia y notas que no se cortan
+\newtcolorbox{calloutbox}[2][]{
+    enhanced,
+    breakable=false,
+    colback=bglight,
+    colframe=#2,
+    arc=3mm,
+    boxrule=1.2pt,
+    left=4mm, right=4mm, top=3mm, bottom=3mm,
+    fonttitle=\bfseries\color{white},
+    colbacktitle=#2,
+    #1
+}
+
+% Control estricto de saltos de página huérfanos
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+
+\begin{document}
+
+% =============================================================================
+% PORTADA / ENCABEZADO PRINCIPAL
+% =============================================================================
+\begin{center}
+    {\color{primary}\Large\bfseries MEMORIA DE TÃTULO \textbar\ INGENIERÃA CIVIL EN INFORMÃTICA}\\[0.25cm]
+    {\color{secondary}\large Proyecto abierto de monitoreo ambiental}\\[0.6cm]
+    
+    \begin{tcolorbox}[colback=primary, colframe=primary, arc=2mm, width=\linewidth, halign=center, top=5mm, bottom=5mm]
+        {\color{white}\LARGE\bfseries ARQUITECTURA DEL FLUJO DE DATOS IoT Y FUNDAMENTACIÓN DE BASE DE DATOS}\\[0.3cm]
+        {\color{white}\large Del Sensor Físico ESP32 a la Persistencia Temporal en TimescaleDB}
+    \end{tcolorbox}
+    \vspace{0.4cm}
+    {\small\textbf{Documento Técnico de Diseño y Modelo Matemático} \textbar\ Fecha: \textbf{Octubre 2026}}
+\end{center}
+
+\vspace{0.3cm}
+
+% =============================================================================
+% SECCIÓN 1: RESUMEN EJECUTIVO Y DIAGRAMA
+% =============================================================================
+\section{Resumen Ejecutivo y Diagrama de Arquitectura End-to-End}
+
+El sistema implementa una arquitectura ciberfísica (CPS) distribuida de tres capas (\textit{Edge}, \textit{Transport/Fog}, \textit{Cloud/Platform}) para el monitoreo continuo de Calidad del Aire Interior (CAI) y Condición Termohigrométrica en recintos universitarios. 
+
+La Figura~\ref{fig:arquitectura_end_to_end} ilustra la ruta crítica de los datos, desde la transducción física en el aula hasta su particionado relacional y temporal en el clúster de Kubernetes:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.1cm and 1.2cm,
+    every node/.style={font=\footnotesize, align=center},
+    boxEdge/.style={rectangle, rounded corners, draw=primary, fill=blue!5, thick, text width=3.8cm, minimum height=1.1cm},
+    boxTrans/.style={rectangle, rounded corners, draw=accent, fill=orange!5, thick, text width=3.8cm, minimum height=1.1cm},
+    boxBackend/.style={rectangle, rounded corners, draw=secondary, fill=cyan!5, thick, text width=3.8cm, minimum height=1.1cm},
+    boxDb/.style={rectangle, rounded corners, draw=successgreen, fill=green!5, thick, text width=3.8cm, minimum height=1.1cm},
+    arrow/.style={-Latex, thick, draw=primary}
+]
+
+% Capa 1: Edge
+\node[boxEdge] (s1) {\textbf{Sensores SCD30 \& SPS30}\\Lectura cada $T_s = 10\text{ s}$};
+\node[boxEdge, below=0.7cm of s1] (agg) {\textbf{Agregación Quinqueminutal}\\30 muestras, filtrado \& conteo};
+\node[boxEdge, below=0.7cm of agg] (edge) {\textbf{Cálculo Local de Ãndices}\\ICAI, ICT, ICG, Matriz 5x5};
+\node[boxEdge, below=0.7cm of edge] (buf) {\textbf{Búfer Flash LittleFS / NVS}\\Retransmisión ante desconexión};
+
+% Capa 2: Transporte
+\node[boxTrans, right=2.0cm of s1] (transport) {\textbf{Transporte WSS Puerto 443}\\MQTT 3.1.1/5.0 Cifrado TLS 1.3};
+\node[boxTrans, below=0.7cm of transport] (broker) {\textbf{Eclipse Mosquitto Broker}\\Dynamic Security Plugin (ACLs)};
+
+% Capa 3: Ingesta
+\node[boxBackend, below=0.7cm of broker] (ingest) {\textbf{Ingestor FastAPI / Worker}\\Validación de Esquema Pydantic};
+\node[boxBackend, below=0.7cm of ingest] (router) {\textbf{Enrutador Temporal}\\Verificado vs. Tiempo Incierto};
+
+% Capa 4: Base de Datos
+\node[boxDb, right=2.0cm of transport] (hyper) {\textbf{Hipertabla TimescaleDB}\\Particionado en chunks de 7 días};
+\node[boxDb, below=0.7cm of hyper] (trg) {\textbf{Trigger Bi-Ventanal ($K=2$)}\\Confirmación de avisos ($ICG \ge 3$)};
+\node[boxDb, below=0.7cm of trg] (alerts) {\textbf{Tabla alertas}\\Deduplicación estricta parcial};
+\node[boxDb, below=0.7cm of alerts] (views) {\textbf{Vistas SQL Optimizadas}\\Estado actual y OMS 24h};
+
+% Conexiones
+\draw[arrow] (s1) -- (agg);
+\draw[arrow] (agg) -- (edge);
+\draw[arrow] (edge) -- (buf);
+\draw[arrow] (buf.east) -- ++(0.7,0) |- (transport.west);
+\draw[arrow] (transport) -- (broker);
+\draw[arrow] (broker) -- (ingest);
+\draw[arrow] (ingest) -- (router);
+\draw[arrow] (router.east) -- ++(0.7,0) |- (hyper.west);
+\draw[arrow] (hyper) -- (trg);
+\draw[arrow] (trg) -- (alerts);
+\draw[arrow] (alerts) -- (views);
+
+\end{tikzpicture}
+\caption{Diagrama de bloques de la arquitectura de telemetría y persistencia end-to-end.}
+\label{fig:arquitectura_end_to_end}
+\end{figure}
+
+\clearpage
+
+% =============================================================================
+% SECCIÓN 2: FASE 1 - EDGE COMPUTING
+% =============================================================================
+\section{Fase 1: Ciclo de Vida del Dato en el ESP32 (Edge Computing)}
+
+\subsection{Transducción Física e Interfaces de Hardware}
+El nodo sensor de aula está gobernado por un microcontrolador de arquitectura abierta \textbf{ESP32-WROOM-32} (SoC dual-core Tensilica Xtensa LX6 a 240\,MHz con 520\,KB de SRAM y 4\,MB de memoria flash SPI). El subsistema sensorial integra dos módulos calibrados de fábrica:
+\begin{itemize}
+    \item \textbf{Sensirion SCD30:} Transductor de Dióxido de Carbono ($\text{CO}_2$) mediante tecnología infrarroja no dispersiva (\textit{NDIR}), complementado con sensores de Temperatura ($T$) y Humedad Relativa ($\text{HR}$). Interfaz mediante bus digital $\text{I}^2\text{C}$ configurado en modo rápido ($400\text{ kHz}$).
+    \item \textbf{Sensirion SPS30:} Transductor óptico de Material Particulado ($\text{PM}_{2.5}$ y $\text{PM}_{10}$) basado en dispersión láser (\textit{laser scattering}) con celda de flujo forzado y ciclo programado de autolimpieza. Interfaz mediante bus $\text{UART}$ o $\text{I}^2\text{C}$.
+\end{itemize}
+
+\subsection{Estrategia de Muestreo y Validación en el Borde}
+Para equilibrar la resolución temporal con la eficiencia energética y la longevidad del hardware:
+\begin{enumerate}
+    \item \textbf{Período de Muestreo ($T_s = 10\text{ s}$):} Una tarea de tiempo real en FreeRTOS ejecuta lecturas periódicas cada 10 segundos.
+    \item \textbf{Ventana de Agregación ($T_w = 300\text{ s} = 5\text{ min}$):} Cada ventana agrupa teóricamente $N = 30\text{ lecturas}$ discretas.
+    \item \textbf{Filtros de Validez Física:} Cada lectura instantánea se valida contra rangos admisibles de operación:
+    \[ 0 \le \text{CO}_2 \le 40000\text{ ppm},\quad \text{PM}_{2.5} \ge 0,\quad \text{PM}_{10} \ge 0,\quad -20^\circ\text{C} \le T \le 60^\circ\text{C},\quad 0\% \le \text{HR} \le 100\% \]
+    \item \textbf{Conteo Estricto de Integridad (\texttt{conteosValidos}):} Se preserva en el paquete el recuento de lecturas útiles por variable (e.g., \texttt{\{"co2":30, "pm25":30, "temperatura":30\}}).
+\end{enumerate}
+
+\subsection{Sincronización Horaria y Resiliencia Desconectada (Tiempo Incierto)}
+\begin{calloutbox}[title=Manejo de Desconexión y Sincronización Temporal]{primary}
+El ESP32 sincroniza su reloj con servidores \textbf{NTP (Network Time Protocol)} vía Internet:
+\begin{itemize}
+    \item \textbf{Hora Verificada:} Si el reloj está sincronizado, la ventana se sella con el instante UTC exacto de su cierre (\texttt{timestamp}).
+    \item \textbf{Hora Incierta (Falla de Red/NTP):} Si el dispositivo arranca sin Internet o se pierde la sincronización, el nodo no genera una marca de tiempo arbitraria. En su lugar, sella el paquete con un contador monotónico (\texttt{ordenRegistro}) derivado de su temporizador interno de microsegundos, enrutándose en la base de datos hacia la tabla segregada \texttt{telemetria\_tiempo\_incierto}.
+    \item \textbf{Búfer Circular Local en Flash:} Ante cortes de enlace WiFi, los paquetes se encolan en memoria no volátil (NVS/LittleFS). Al reconectarse, se drenan mediante ráfagas con la bandera \texttt{esRetransmision = true}. Si el búfer se satura, se incrementa el contador auditable \texttt{ventanasDescartadas}.
+\end{itemize}
+\end{calloutbox}
+
+% =============================================================================
+% SECCIÓN 3 Y 4: TRANSPORTE E INGESTA
+% =============================================================================
+\section{Fase 2 y 3: Transporte Seguro e Ingesta en el Backend}
+
+\subsection{¿Por qué MQTT sobre WSS en el Puerto Estándar 443?}
+\begin{itemize}
+    \item \textbf{Evasión de Restricciones Perimetrales de Red:} Los cortafuegos de redes universitarias y corporativas bloquean rutinariamente puertos IoT no estándar como el 1883 (MQTT plano) y el 8883 (MQTTS). El puerto \textbf{443 (HTTPS/WSS)} está universalmente habilitado para tráfico saliente.
+    \item \textbf{Bajo Consumo y Sesión Persistente:} A diferencia de HTTP REST (que fuerza el costo computacional de apretones de manos TCP+TLS y cabeceras voluminosas en cada reporte), MQTT opera sobre un canal TCP bidireccional continuo con cabeceras fijas de tan solo 2 bytes.
+    \item \textbf{Mosquitto Dynamic Security:} Cada ESP32 se autentica con credenciales individuales administradas por el plugin de seguridad dinámica del broker Eclipse Mosquitto, con listas de control de acceso (ACL) que le impiden suscribirse o publicar en tópicos asignados a otras salas.
+\end{itemize}
+
+\subsection{Microservicio Consumidor Asíncrono (FastAPI + Pydantic)}
+En el clúster de Kubernetes, un servicio en \textbf{Python 3.11} implementa un bucle asíncrono con \texttt{asyncio}:
+\begin{enumerate}
+    \item Consume el tópico comodín \texttt{universidad/telemetria/+}.
+    \item Valida sintáctica y semánticamente el payload JSON mediante modelos estrictos de \textbf{Pydantic V2}.
+    \item Discrimina paquetes con hora comprobada para inserción directa en la hipertabla \texttt{telemetria}, o paquetes sin reloj para la tabla \texttt{telemetria\_tiempo\_incierto}.
+\end{enumerate}
+
+\clearpage
+
+% =============================================================================
+% SECCIÓN 5: PERSISTENCIA Y TIMESCALEDB
+% =============================================================================
+\section{Fase 4: Persistencia y Lógica de Negocio en Base de Datos}
+
+\subsection{Hipertabla y Particionamiento Automático}
+La persistencia de series temporales se apoya en \textbf{PostgreSQL 16 con TimescaleDB}. La tabla \texttt{telemetria} se define con clave primaria compuesta \texttt{("salaId", "timestamp")} y se convierte en hipertabla:
+\begin{lstlisting}[language=SQL]
+SELECT create_hypertable('telemetria', 'timestamp', 
+    chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);
+\end{lstlisting}
+El motor segmenta los registros físicamente en \textit{chunks} de 7 días, garantizando que los índices B-Tree de inserción residan siempre en memoria RAM.
+
+\subsection{Trigger Transaccional de Detección de Avisos Ambientales}
+Cada inserción ejecuta el disparador \texttt{trg\_confirmar\_aviso\_ambiental} invocando a la función \texttt{fn\_procesar\_ventana\_telemetria()}:
+
+\begin{calloutbox}[title=Lógica Transaccional del Trigger en PL/pgSQL]{secondary}
+\begin{enumerate}
+    \item \textbf{Marcado de Presencia:} Actualiza en milisegundos \texttt{nodos.ultimaTelemetria = NEW.timestamp} y \texttt{nodos.estado = 'conectado'}.
+    \item \textbf{Protección contra Ingesta Fuera de Orden:} Evalúa mediante \texttt{NOT EXISTS} que no exista telemetría posterior en la misma sala antes de procesar resoluciones o confirmaciones, evitando anomalías por retransmisiones de paquetes antiguos.
+    \item \textbf{Confirmación Bi-Ventanal ($K = 2$):} Busca en la misma sala ventanas vecinas a $t \pm 5\text{ min}$ con $\text{ICG} \ge 3$ que compartan variables causales (\texttt{causasICG}). Si la condición persiste 10 minutos, confirma el aviso.
+    \item \textbf{Deduplicación Estricta de Alertas:} Mediante el índice único parcial:
+    \begin{lstlisting}[language=SQL]
+CREATE UNIQUE INDEX uq_alerta_activa_sala_variable 
+    ON alertas("salaId", variable) WHERE estado = 'activa';
+    \end{lstlisting}
+    Se impide la generación de múltiples alertas redundantes ante condiciones desfavorables prolongadas.
+    \item \textbf{Resolución Automática:} Cuando una ventana posterior ingresa con parámetros normalizados ($\text{ICG} < 3$), marca la alerta como \texttt{'resuelta'} y estampa la hora en \texttt{resueltaEn}.
+\end{enumerate}
+\end{calloutbox}
+
+% =============================================================================
+% SECCIÓN 6: FUNDAMENTACIÓN TIMESCALEDB VS MARIADB
+% =============================================================================
+\clearpage
+\section{Fase 5: Fundamentación Técnica: TimescaleDB vs. MariaDB}
+
+La elección de \textbf{PostgreSQL 16 + TimescaleDB} y el descarte explícito de \textbf{MariaDB} (tanto con motor \texttt{InnoDB} como \texttt{ColumnStore} o \texttt{Aria}) obedece a razones rigurosas de arquitectura de sistemas de bases de datos.
+
+\subsection{Tabla Comparativa Multidimensional}
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{p{3.2cm}X X}
+\toprule
+\textbf{Criterio de Evaluación} & \textbf{PostgreSQL 16 + TimescaleDB} & \textbf{MariaDB (InnoDB / ColumnStore)} \\
+\midrule
+\textbf{Modelo de Series Temporales} & 
+\textbf{Nativo (Hipertablas):} Particionado temporal dinámico transparente por chunks. & 
+\textbf{Inexistente:} Requiere particionado manual \texttt{RANGE} con mantenimiento DDL por cron. \\
+
+\textbf{Desempeño del Ãndice B-Tree} & 
+\textbf{Inmune a degradación:} Ãndices independientes por chunk mantenidos $100\%$ en RAM. & 
+\textbf{Colapso por Thrashing:} El B-Tree masivo supera el \texttt{innodb\_buffer\_pool\_size} y satura el disco. \\
+
+\textbf{Compresión de Datos} & 
+\textbf{Híbrida Especializada:} Algoritmos Gorilla, Delta-of-delta, RLE y ZSTD (\textbf{90--95\% ahorro}). & 
+\textbf{Páginas Genéricas:} Compresión zlib de páginas de 16\,KB (\textbf{40--50\% ahorro}, alto CPU). \\
+
+\textbf{Agregación Temporal} & 
+\textbf{Primitivas Nativas:} \texttt{time\_bucket\_gapfill()} e interpolación \texttt{locf()} en SQL. & 
+\textbf{Aritmética Manual:} \texttt{FLOOR(UNIX\_TIMESTAMP()/300)} con vacíos sin rellenar. \\
+
+\textbf{Datos JSON} & 
+\textbf{JSONB Binario:} Parseado al escribir, indexable con GIN y operadores de contención \texttt{@>}. & 
+\textbf{Pseudo-JSON:} Simple alias de \texttt{LONGTEXT} parseado como cadena en cada fila leída. \\
+
+\textbf{Ãndices Parciales Condicionales} & 
+\textbf{Soporte Nativo:} \texttt{CREATE INDEX ... WHERE condicion;} & 
+\textbf{No Soportado en InnoDB:} Requiere columnas virtuales generadas redundantes. \\
+
+\textbf{Ãlgebra de Conjuntos en Triggers} & 
+\textbf{Arreglos Tipados:} \texttt{TEXT[]}, \texttt{UNNEST()} y \texttt{INTERSECT} en microsegundos. & 
+\textbf{Inexistente:} Obliga a usar strings con comas (\texttt{FIND\_IN\_SET}) o tablas temporales lentas. \\
+\bottomrule
+\end{tabularx}
+\caption{Comparativa técnica entre PostgreSQL/TimescaleDB y MariaDB para el monitoreo ambiental.}
+\label{tab:comparativa_db}
+\end{table}
+
+\subsection{Los 7 Pilares Técnicos del Descarte de MariaDB}
+\begin{enumerate}
+    \item \textbf{El Colapso del B-Tree en Series Masivas:} En MariaDB InnoDB, la acumulación de millones de mediciones hace que el índice sobre \texttt{(salaId, timestamp)} exceda el tamaño de la memoria RAM asignada al pool de búferes. Cada nueva inserción requiere lecturas aleatorias en disco para ubicar la hoja del árbol, desplomando la tasa de escritura. En TimescaleDB, cada chunk de 7 días se mantiene pequeño ($\approx 20\%$ de la RAM), logrando escrituras constantes sin importar los años acumulados.
+    \item \textbf{Fragilidad del Particionado Manual:} En MariaDB, si un ESP32 pasa días desconectado y luego vacía su memoria flash retransmitiendo ventanas atrasadas, los datos pueden corresponder a particiones no creadas o bloqueadas, generando contención de metadatos (\textit{Metadata Locks}). TimescaleDB crea chunks retroactivos de forma automática y transparente.
+    \item \textbf{Compresión Especializada de Series Temporales:} TimescaleDB comprime datos mediante algoritmos optimizados para IoT (Gorilla para flotantes, Delta-of-delta para tiempos), reduciendo el almacenamiento en un \textbf{90--95\%}. Esto permite albergar el histórico de cientos de aulas en volúmenes PVC económicos de Kubernetes.
+    \item \textbf{Relleno de Vacíos Temporales (\textit{Gapfilling}):} TimescaleDB resuelve con \texttt{time\_bucket\_gapfill()} y \texttt{locf()} las series continuas necesarias para comparar las partículas contra las guías diarias de la OMS ($15$ y $45\,\mu\text{g/m}^3$), mientras que MariaDB devuelve series con huecos en períodos vacacionales o fines de semana.
+    \item \textbf{Estructuras JSONB Reales:} Para auditar los \texttt{conteosValidos} del sensor y la trazabilidad de bajas en \texttt{retiroContexto}, PostgreSQL almacena binarios estructurados; MariaDB fuerza el parseo repetido de cadenas de texto plano.
+    \item \textbf{Imprescindibilidad de Ãndices Parciales:} La deduplicación estricta de alertas (\texttt{WHERE estado = 'activa'}) y la baja lógica de recintos (\texttt{WHERE "retiradoEn" IS NULL}) son nativas en PostgreSQL e imposibles de implementar limpiamente en el motor InnoDB de MariaDB.
+    \item \textbf{Triggers con Operaciones de Conjuntos:} El cálculo de variables causales comunes entre ventanas adyacentes (\texttt{causasICG}) se computa mediante \texttt{INTERSECT} sobre arreglos nativos \texttt{TEXT[]}, inviable en MariaDB sin penalización masiva en latencia.
+\end{enumerate}
+
+\clearpage
+
+% =============================================================================
+% SECCIÓN 8: MODELO MATEMÃTICO Y NORMATIVO DE LOS ÃNDICES
+% =============================================================================
+\section{Modelo Matemático y Normativo de los Ãndices (ICAI, ICT e ICG)}
+
+\subsection{Escala Unificada de Severidad Operacional (\texorpdfstring{$0 \dots 4$}{0 a 4})}
+Para normalizar magnitudes físicas de naturaleza incompatible ($\text{ppm}$, $\mu\text{g/m}^3$, $^\circ\text{C}$, $\%$), se define una escala discreta $S \in \{0,1,2,3,4\}$ que traduce las mediciones en decisiones operacionales:
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{c l X l}
+\toprule
+\textbf{Nivel ($S$)} & \textbf{Categoría} & \textbf{Significado Operacional en el Recinto Universitario} & \textbf{Acción del Sistema} \\
+\midrule
+\textbf{0} & \textbf{Óptimo} & Parámetros ideales de confort térmico y ventilación basal. & Ninguna acción. \\
+\textbf{1} & \textbf{Precaución} & Desviación incipiente de confort o acumulación leve de bioefluentes. & Frase preventiva en pantalla. \\
+\textbf{2} & \textbf{Deficiente} & Disconfort evidente o ventilación por debajo de estándares de diseño. & Revisión de ventilación/clima. \\
+\textbf{3} & \textbf{Malo} & Severidad ambiental elevada con afectación demostrada en concentración. & Revisión prioritaria (aviso $10\text{ min}$). \\
+\textbf{4} & \textbf{Crítico} & Condición extrema de aire viciado, humo/polvo o disconfort térmico agudo. & Revisión inmediata prioritaria. \\
+\bottomrule
+\end{tabularx}
+\caption{Escala unificada de severidad ambiental y reglas de intervención operacional.}
+\label{tab:escala_severidad}
+\end{table}
+
+\subsection{Formulación Matemática y Umbrales Normativos por Variable}
+
+\subsubsection{Dióxido de Carbono (\texorpdfstring{$\text{CO}_2$}{CO2})}
+\begin{itemize}
+    \item \textbf{Fundamentación:} Trazador de aire exhalado y ventilación por persona ($Q/N$) según el balance de masas de Seidel y Persily. ASHRAE 62.1 recomienda mantener el diferencial bajo $700\text{ ppm}$ respecto al aire exterior ($\approx 1100\text{ ppm}$). Estudios en aulas (Satish et al., Fan et al., DfE británico) reportan pérdida significativa de atención sobre $1500\text{ ppm}$.
+    \item \textbf{Función de Severidad $S_{\text{CO}_2}$:}
+    \begin{equation}
+    S_{\text{CO}_2} = \begin{cases}
+    0\text{ (Óptimo)}, & \bar{C}_{\text{CO}_2, 5m} < 800\text{ ppm} \\
+    1\text{ (Precaución)}, & 800\text{ ppm} \le \bar{C}_{\text{CO}_2, 5m} < 1000\text{ ppm} \\
+    2\text{ (Deficiente)}, & 1000\text{ ppm} \le \bar{C}_{\text{CO}_2, 5m} < 1500\text{ ppm} \\
+    3\text{ (Malo)}, & 1500\text{ ppm} \le \bar{C}_{\text{CO}_2, 5m} < 2000\text{ ppm} \\
+    4\text{ (Crítico)}, & \bar{C}_{\text{CO}_2, 5m} \ge 2000\text{ ppm}
+    \end{cases}
+    \end{equation}
+\end{itemize}
+
+\subsubsection{Material Particulado Fino (\texorpdfstring{$\text{PM}_{2.5}$}{PM2.5}) y Grueso (\texorpdfstring{$\text{PM}_{10}$}{PM10})}
+\begin{itemize}
+    \item \textbf{Fundamentación:} Las guías OMS 2021 definen límites diarios de 24 horas ($G_{\text{PM2.5}} = 15\,\mu\text{g/m}^3$, $G_{\text{PM10}} = 45\,\mu\text{g/m}^3$). Dado que en un aula no se puede postergar la ventilación 24 horas ante episodios agudos de humo o polvo, se define el ratio normalizado de evento:
+    \begin{equation}
+    R_p = \frac{\bar{C}_{p, 5m}}{G_p}, \quad p \in \{\text{PM}_{2.5}, \text{PM}_{10}\}
+    \end{equation}
+    \item \textbf{Bandas de Severidad $S_p$:}
+    \begin{equation}
+    S_p = \begin{cases}
+    0\text{ (Óptimo)}, & R_p < 0.5 \iff \text{PM}_{2.5} < 7.5\,\mu\text{g/m}^3, \ \text{PM}_{10} < 22.5\,\mu\text{g/m}^3 \\
+    1\text{ (Precaución)}, & 0.5 \le R_p < 1.0 \iff \text{PM}_{2.5} \in [7.5, 15.0[, \ \text{PM}_{10} \in [22.5, 45.0[ \\
+    2\text{ (Deficiente)}, & 1.0 \le R_p < 2.0 \iff \text{PM}_{2.5} \in [15.0, 30.0[, \ \text{PM}_{10} \in [45.0, 90.0[ \\
+    3\text{ (Malo)}, & 2.0 \le R_p < 4.0 \iff \text{PM}_{2.5} \in [30.0, 60.0[, \ \text{PM}_{10} \in [90.0, 180.0[ \\
+    4\text{ (Crítico)}, & R_p \ge 4.0 \iff \text{PM}_{2.5} \ge 60.0\,\mu\text{g/m}^3, \ \text{PM}_{10} \ge 180.0\,\mu\text{g/m}^3
+    \end{cases}
+    \end{equation}
+\end{itemize}
+
+\clearpage
+
+\subsubsection{Temperatura del Aire (\texorpdfstring{$T_a$}{Ta})}
+\begin{itemize}
+    \item \textbf{Fundamentación:} Conforme al D.S. N° 594 de Chile y literatura de confort escolar (Singh et al., Lamberti et al., ASHRAE 55), se fija una banda neutra $[20^\circ\text{C}, 24^\circ\text{C}]$. La distancia absoluta se define como:
+    \begin{equation}
+    d_T = \max(20 - T_a, \, 0, \, T_a - 24)
+    \end{equation}
+    \item \textbf{Severidad en Pasos Discretos de $2^\circ\text{C}$:}
+    \begin{equation}
+    S_T = \begin{cases}
+    0\text{ (Óptimo)}, & d_T = 0 \iff 20^\circ\text{C} \le T_a \le 24^\circ\text{C} \\
+    1\text{ (Precaución)}, & 0 < d_T \le 2 \iff T_a \in [18^\circ\text{C}, 20^\circ\text{C}[\ \cup\ ]24^\circ\text{C}, 26^\circ\text{C}] \\
+    2\text{ (Deficiente)}, & 2 < d_T \le 4 \iff T_a \in [16^\circ\text{C}, 18^\circ\text{C}[\ \cup\ ]26^\circ\text{C}, 28^\circ\text{C}] \\
+    3\text{ (Malo)}, & 4 < d_T \le 6 \iff T_a \in [14^\circ\text{C}, 16^\circ\text{C}[\ \cup\ ]28^\circ\text{C}, 30^\circ\text{C}] \\
+    4\text{ (Crítico)}, & d_T > 6 \iff T_a < 14^\circ\text{C} \quad\text{o}\quad T_a > 30^\circ\text{C}
+    \end{cases}
+    \end{equation}
+\end{itemize}
+
+\subsubsection{Humedad Relativa (\texorpdfstring{$\text{HR}$}{HR})}
+\begin{itemize}
+    \item \textbf{Fundamentación:} Criterios EPA y médicos ($30\%$ a $60\%$). Menor a $30\%$ reseca mucosas respiratorias facilitando infecciones víricas; mayor a $60\%$ detona floración de hongos y ácaros. La distancia se define como:
+    \begin{equation}
+    d_{\text{HR}} = \max(30 - \text{HR}, \, 0, \, \text{HR} - 60)
+    \end{equation}
+    \item \textbf{Severidad en Pasos Discretos de $10\%$:}
+    \begin{equation}
+    S_{\text{HR}} = \begin{cases}
+    0\text{ (Óptimo)}, & d_{\text{HR}} = 0 \iff 30\% \le \text{HR} \le 60\% \\
+    1\text{ (Precaución)}, & 0 < d_{\text{HR}} \le 10 \iff \text{HR} \in [20\%, 30\%[\ \cup\ ]60\%, 70\%] \\
+    2\text{ (Deficiente)}, & 10 < d_{\text{HR}} \le 20 \iff \text{HR} \in [10\%, 20\%[\ \cup\ ]70\%, 80\%] \\
+    3\text{ (Malo)}, & 20 < d_{\text{HR}} \le 30 \iff \text{HR} \in [0\%, 10\%[\ \cup\ ]80\%, 90\%] \\
+    4\text{ (Crítico)}, & d_{\text{HR}} > 30 \iff \text{HR} > 90\%\quad\text{(saturación y condensación)}
+    \end{cases}
+    \end{equation}
+\end{itemize}
+
+\subsection{Agregación Multicriterio No Compensatoria: ¿Por qué el Operador Máximo?}
+\begin{equation}
+S_{\text{aire}} = \max\left(S_{\text{CO}_2}, \, S_{\text{PM2.5}}, \, S_{\text{PM10}}\right),\qquad
+S_{\text{termico}} = \max\left(S_T, \, S_{\text{HR}}\right)
+\end{equation}
+\begin{equation}
+\text{ICG} = S_{\text{global}} = \max\left(S_{\text{aire}}, \, S_{\text{termico}}\right)
+\end{equation}
+
+\begin{calloutbox}[title=Demostración del Efecto de Enmascaramiento (Masking Effect)]{accent}
+Si se utilizara un promedio ponderado tradicional ($\text{ICG} = 0.5 \cdot S_{\text{aire}} + 0.5 \cdot S_{\text{termico}}$), en un aula en invierno con temperatura ideal de $21^\circ\text{C}$ ($S_{\text{termico}} = 0$) pero con ventanas cerradas y $\text{CO}_2$ en $2600\text{ ppm}$ ($S_{\text{aire}} = 4$):
+\[ \text{ICG}_{\text{promedio}} = \frac{0 + 4}{2} = 2.0\quad\text{(\textbf{Deficiente} o \textbf{Precaución})} \]
+El sistema reportaría una condición falsamente leve, enmascarando que los estudiantes sufren hipoxia relativa y somnolencia grave. Con el operador \textbf{MÃXIMO}, $\text{ICG} = \max(0, 4) = 4$ (\textbf{Crítico}), asegurando que una condición favorable \textbf{nunca} oculte un peligro sanitario.
+\end{calloutbox}
+
+\subsection{Diagnóstico Bidimensional: La Matriz 5x5 y Persistencia Bi-Ventanal}
+El par $D = (S_{\text{aire}}, S_{\text{termico}})$ se proyecta en una matriz de 25 celdas diagnósticas:
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{c | c c c c c}
+\toprule
+$S_{\text{termico}} \ \backslash \ S_{\text{aire}}$ & \textbf{0 (Óptimo)} & \textbf{1 (Precaución)} & \textbf{2 (Deficiente)} & \textbf{3 (Malo)} & \textbf{4 (Crítico)} \\
+\midrule
+\textbf{0 (Óptimo)}     & \textbf{O}   & \textbf{A1} & \textbf{A2} & \textbf{A3} & \textbf{A4} \\
+\textbf{1 (Precaución)} & \textbf{T1}  & \textbf{M1} & \textbf{A2} & \textbf{A3} & \textbf{A4} \\
+\textbf{2 (Deficiente)} & \textbf{T2}  & \textbf{T2} & \textbf{M2} & \textbf{A3} & \textbf{A4} \\
+\textbf{3 (Malo)}       & \textbf{T3}  & \textbf{T3} & \textbf{T3} & \textbf{M3} & \textbf{A4} \\
+\textbf{4 (Crítico)}    & \textbf{T4}  & \textbf{T4} & \textbf{T4} & \textbf{T4} & \textbf{M4} \\
+\bottomrule
+\end{tabular}
+\caption{Matriz diagnóstica 5x5 (\textbf{O}: Óptimo, \textbf{A}: Predominio de Aire, \textbf{T}: Térmico, \textbf{M}: Mixto).}
+\label{tab:matriz_5x5}
+\end{table}
+
+\textbf{Regla de Persistencia Operacional ($K = 2$ ventanas = $10\text{ min}$):} Mientras el dashboard web muestra cada ventana de 5 minutos al instante, la notificación formal a Telegram se condiciona a que dos ventanas consecutivas cumplan $\text{ICG} \ge 3$ y compartan variables causales (\texttt{causasICG}). Esto adopta la recomendación de la HSE británica para eliminar falsas alarmas provocadas por fluctuaciones esporádicas.
+
+\end{document}

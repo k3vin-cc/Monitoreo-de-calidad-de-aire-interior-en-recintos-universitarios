@@ -1,0 +1,65 @@
+@startuml
+title Modelo relacional de la base de datos (etapa 2)
+left to right direction
+skinparam linetype ortho
+hide circle
+
+entity sectores { * id : varchar(36) <<PK>> }
+entity edificios { * id : varchar(36) <<PK>>
+  * sectorId : varchar(36) <<FK>> }
+entity pisos { * id : varchar(36) <<PK>>
+  * edificioId : varchar(36) <<FK>> }
+entity salas { * id : varchar(36) <<PK>>
+  * pisoId : varchar(36) <<FK>> }
+
+entity usuarios { * id : varchar(36) <<PK>>
+  * email : varchar(100) <<UQ>>
+  * rol : varchar(20)
+  * estado : varchar(20) }
+entity usuario_edificios { * usuarioId : varchar(36) <<PK,FK>>
+  * edificioId : varchar(36) <<PK,FK>> }
+entity sesiones_usuario { * id : uuid <<PK>>
+  * usuarioId : varchar(36) <<FK>> }
+entity firmwares { * id : varchar(36) <<PK>>
+  * version : varchar(20) <<UQ>>
+  subidoPor : varchar(36) <<FK>> }
+entity nodos { * id : varchar(36) <<PK>>
+  salaId : varchar(36) <<FK,UQ>>
+  firmwareId : varchar(36) <<FK>>
+  flasheadoPor : varchar(36) <<FK>> }
+entity telemetria { * salaId : varchar(36) <<PK,FK>>
+  * timestamp : timestamptz <<PK>>
+  * nodoId : varchar(36) <<FK>>
+  icaiScore / ictScore / icgScore
+  celdaMatriz / recomendaciones }
+entity telemetria_tiempo_incierto { * id : uuid <<PK>>
+  * nodoId : varchar(36) <<FK>>
+  salaId : varchar(36) <<FK>> }
+entity alertas { * id : varchar(36) <<PK>>
+  * salaId : varchar(36) <<FK>>
+  * nodoId : varchar(36) <<FK>> }
+entity telegram_vinculos { * usuarioId : varchar(36) <<PK,FK>>
+  chatId : bigint <<UQ>> }
+entity telegram_preferencias_salas { * usuarioId : varchar(36) <<PK,FK>>
+  * salaId : varchar(36) <<PK,FK>> }
+
+sectores ||--o{ edificios
+edificios ||--o{ pisos
+pisos ||--o{ salas
+usuarios ||--o{ usuario_edificios
+edificios ||--o{ usuario_edificios
+usuarios ||--o{ sesiones_usuario
+usuarios |o--o{ firmwares : subidoPor
+salas |o--o| nodos : asignacion
+firmwares |o--o{ nodos
+usuarios |o--o{ nodos : flasheadoPor
+salas ||--o{ telemetria
+nodos ||--o{ telemetria
+salas |o--o{ telemetria_tiempo_incierto
+nodos ||--o{ telemetria_tiempo_incierto
+salas ||--o{ alertas
+nodos ||--o{ alertas
+usuarios ||--o| telegram_vinculos
+telegram_vinculos ||--o{ telegram_preferencias_salas
+salas ||--o{ telegram_preferencias_salas
+@enduml

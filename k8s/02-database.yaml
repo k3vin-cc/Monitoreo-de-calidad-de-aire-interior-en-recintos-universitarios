@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calidad-db
+  namespace: aira
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: calidad-db
+  template:
+    metadata:
+      labels:
+        app: calidad-db
+    spec:
+      containers:
+        - name: postgres
+          image: timescale/timescaledb:latest-pg16
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - shared_buffers=128MB
+            - -c
+            - work_mem=4MB
+            - -c
+            - maintenance_work_mem=32MB
+            - -c
+            - max_connections=40
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: calidad-secrets
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 18
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: database-data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+            - name: database-init
+              mountPath: /docker-entrypoint-initdb.d/01_schema.sql
+              subPath: 01_schema.sql
+              readOnly: true
+      volumes:
+        - name: database-data
+          persistentVolumeClaim:
+            claimName: calidad-db-pvc
+        - name: database-init
+          configMap:
+            name: calidad-db-init
+            items:
+              - key: 01_schema.sql
+                path: 01_schema.sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: calidad-db
+  namespace: aira
+spec:
+  type: ClusterIP
+  selector:
+    app: calidad-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
