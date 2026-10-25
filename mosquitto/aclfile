@@ -1,0 +1,4 @@
+user api
+topic read telemetria/+/datos
+
+pattern write telemetria/%u/datos

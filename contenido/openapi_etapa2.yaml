@@ -1,0 +1,508 @@
+openapi: 3.0.3
+info:
+  title: API REST del sistema de monitoreo ambiental
+  version: 0.1.0
+  description: >-
+    Contrato propuesto durante la Etapa 2. Define consultas y gestión
+    del dashboard; no acredita que los endpoints estén implementados.
+    El ESP32 publica telemetría por MQTT/TLS y calcula ICAI, ICT e ICG.
+    FastAPI valida y almacena esos resultados sin recalcularlos.
+    WebSocket distribuye actualizaciones y no se describe como operación REST.
+tags:
+  - name: Autenticación
+  - name: Salas
+  - name: Nodos
+  - name: Avisos
+  - name: Telegram
+paths:
+  /telegram/vinculo:
+    post:
+      tags: [Telegram]
+      summary: Iniciar vínculo de la cuenta con un chat de Telegram
+      description: Genera un código temporal que el usuario debe confirmar desde el bot. El número telefónico no acredita el vínculo.
+      responses:
+        '200':
+          description: Código temporal generado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [codigo, expiraEn]
+                properties:
+                  codigo: {type: string}
+                  expiraEn: {type: string, format: date-time}
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+      security:
+        - bearerAuth: []
+  /telegram/preferencias:
+    get:
+      tags: [Telegram]
+      summary: Consultar las preferencias propias y el estado del vínculo
+      responses:
+        '200':
+          description: Preferencias del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenciasTelegram'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+      security:
+        - bearerAuth: []
+    put:
+      tags: [Telegram]
+      summary: Guardar salas autorizadas y activación de avisos
+      description: El servidor verifica la visibilidad actual de cada sala; las preferencias nunca amplían permisos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferenciasTelegram'
+      responses:
+        '200':
+          description: Preferencias guardadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenciasTelegram'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+      security:
+        - bearerAuth: []
+  /auth/login:
+    post:
+      tags: [Autenticación]
+      summary: Obtener token de acceso para el dashboard
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credenciales'
+      responses:
+        '200':
+          description: Autenticación aceptada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenAcceso'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+  /salas/{salaId}/estado:
+    get:
+      tags: [Salas]
+      summary: Consultar la última ventana con hora verificable de una sala
+      description: >-
+        Devuelve resultados calculados por el ESP32. Una ventana atrasada
+        no sustituye otra posterior. Las ventanas con hora incierta no
+        participan en esta vista.
+      x-roles-permitidos: [ADMIN, ANALISTA, VIEWER]
+      parameters:
+        - $ref: '#/components/parameters/SalaId'
+      responses:
+        '200':
+          description: Última ventana fechada disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VentanaTelemetria'
+        '204':
+          description: La sala no tiene ventanas fechadas disponibles
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+      security:
+        - bearerAuth: []
+  /salas/{salaId}/telemetria:
+    get:
+      tags: [Salas]
+      summary: Consultar el historial fechado de una sala
+      description: >-
+        Ordena por la hora de medición, no por la llegada al backend.
+        Incluye ventanas recibidas con retraso cuando su hora es verificable.
+        Excluye ventanas de telemetria_tiempo_incierto.
+      x-roles-permitidos: [ADMIN, ANALISTA]
+      parameters:
+        - $ref: '#/components/parameters/SalaId'
+        - name: desde
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Inicio inclusivo del rango UTC
+        - name: hasta
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Fin exclusivo del rango UTC
+        - name: limite
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: desplazamiento
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Ventanas del rango solicitado
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VentanaTelemetria'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+      security:
+        - bearerAuth: []
+  /salas/{salaId}/exportacion:
+    get:
+      tags: [Salas]
+      summary: Descargar historial autorizado en CSV o JSON
+      description: La misma autorización se aplica cuando el bot entrega el archivo al chat vinculado. Las ventanas con hora incierta quedan excluidas.
+      x-roles-permitidos: [ADMIN, ANALISTA]
+      parameters:
+        - $ref: '#/components/parameters/SalaId'
+        - name: desde
+          in: query
+          required: true
+          schema: {type: string, format: date-time}
+        - name: hasta
+          in: query
+          required: true
+          schema: {type: string, format: date-time}
+        - name: formato
+          in: query
+          required: true
+          schema: {type: string, enum: [csv, json]}
+      responses:
+        '200':
+          description: Archivo de datos históricos autorizados
+          content:
+            text/csv:
+              schema: {type: string}
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VentanaTelemetria'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+      security:
+        - bearerAuth: []
+  /nodos/{nodoId}:
+    get:
+      tags: [Nodos]
+      summary: Consultar el estado y la asignación de un nodo
+      x-roles-permitidos: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/NodoId'
+      responses:
+        '200':
+          description: Nodo encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nodo'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+      security:
+        - bearerAuth: []
+  /nodos/{nodoId}/asignacion:
+    patch:
+      tags: [Nodos]
+      summary: Asignar un nodo a una sala
+      description: >-
+        Modifica la asignación administrativa del nodo. La configuración
+        de Wi-Fi y credenciales del ESP32 se realiza mediante el flujo
+        local de aprovisionamiento descrito en el informe.
+      x-roles-permitidos: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/NodoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [salaId]
+              properties:
+                salaId:
+                  type: string
+                  description: Sala de destino
+            example:
+              salaId: sala-101
+      responses:
+        '200':
+          description: Asignación actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nodo'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: La sala ya tiene un nodo asignado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+  /alertas:
+    get:
+      tags: [Avisos]
+      summary: Consultar avisos operacionales confirmados
+      x-roles-permitidos: [ADMIN, ANALISTA]
+      parameters:
+        - name: salaId
+          in: query
+          schema:
+            type: string
+        - name: desde
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: hasta
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Avisos confirmados a los que tiene acceso el usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Aviso'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+      security:
+        - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SalaId:
+      name: salaId
+      in: path
+      required: true
+      schema:
+        type: string
+    NodoId:
+      name: nodoId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    SolicitudInvalida:
+      description: Parámetros o cuerpo de solicitud inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoAutenticado:
+      description: Credenciales ausentes o inválidas
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: El rol no tiene permiso sobre el recurso
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NoEncontrado:
+      description: Sala o nodo inexistente
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    PreferenciasTelegram:
+      type: object
+      required: [avisosActivos, salasSeleccionadas]
+      properties:
+        avisosActivos: {type: boolean}
+        salasSeleccionadas:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        chatVinculado:
+          type: boolean
+          readOnly: true
+    Credenciales:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    TokenAcceso:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [bearer]
+    Error:
+      type: object
+      required: [detalle]
+      properties:
+        detalle:
+          type: string
+    Nodo:
+      type: object
+      required: [id, salaId, estado, firmware]
+      properties:
+        id:
+          type: string
+        salaId:
+          type: string
+        estado:
+          type: string
+          enum: [conectado, desconectado]
+        firmware:
+          type: string
+        ultimaTelemetria:
+          type: string
+          format: date-time
+          nullable: true
+    ConteosValidos:
+      type: object
+      required: [co2, pm25, pm10, temperatura, humedad]
+      properties:
+        co2: {type: integer, minimum: 0, maximum: 30}
+        pm25: {type: integer, minimum: 0, maximum: 30}
+        pm10: {type: integer, minimum: 0, maximum: 30}
+        temperatura: {type: integer, minimum: 0, maximum: 30}
+        humedad: {type: integer, minimum: 0, maximum: 30}
+    EstadoIndice:
+      type: string
+      enum: [completo, parcial, dato_insuficiente]
+    Severidad:
+      type: integer
+      minimum: 0
+      maximum: 4
+      nullable: true
+    Causas:
+      type: array
+      nullable: true
+      items:
+        type: string
+    VentanaTelemetria:
+      type: object
+      description: >-
+        Ventana de cinco minutos con hora verificable. Los índices y causas
+        corresponden al cálculo efectuado en el ESP32.
+      required:
+        - salaId
+        - nodoId
+        - timestamp
+        - versionReglas
+        - conteosValidos
+        - icaiEstado
+        - ictEstado
+        - icgEstado
+      properties:
+        salaId: {type: string}
+        nodoId: {type: string}
+        timestamp:
+          type: string
+          format: date-time
+          description: Fin verificable de la ventana, expresado en UTC
+        versionReglas: {type: string}
+        conteosValidos:
+          $ref: '#/components/schemas/ConteosValidos'
+        co2: {type: number, nullable: true, description: ppm}
+        pm25: {type: number, nullable: true, description: microgramos por metro cúbico}
+        pm10: {type: number, nullable: true, description: microgramos por metro cúbico}
+        temperatura: {type: number, nullable: true, description: grados Celsius}
+        humedad: {type: number, nullable: true, description: porcentaje}
+        icaiScore:
+          $ref: '#/components/schemas/Severidad'
+        icaiCategoria:
+          type: string
+          nullable: true
+          enum: [Optimo, Precaucion, Deficiente, Malo, Critico]
+        icaiEstado:
+          $ref: '#/components/schemas/EstadoIndice'
+        causasICAI:
+          $ref: '#/components/schemas/Causas'
+        ictScore:
+          $ref: '#/components/schemas/Severidad'
+        ictEstado:
+          $ref: '#/components/schemas/EstadoIndice'
+        causasICT:
+          $ref: '#/components/schemas/Causas'
+        icgScore:
+          $ref: '#/components/schemas/Severidad'
+        icgEstado:
+          $ref: '#/components/schemas/EstadoIndice'
+        causasICG:
+          $ref: '#/components/schemas/Causas'
+    Aviso:
+      type: object
+      required: [id, salaId, nodoId, variable, valorMedido, nivel, ventanaConfirmacion, timestamp, estado]
+      properties:
+        id: {type: string}
+        salaId: {type: string}
+        nodoId: {type: string}
+        variable: {type: string}
+        valorMedido: {type: number}
+        nivel: {type: integer, enum: [3, 4]}
+        ventanaConfirmacion: {type: string, format: date-time}
+        timestamp: {type: string, format: date-time}
+        estado: {type: string, enum: [activa, resuelta]}
