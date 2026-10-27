@@ -116,11 +116,15 @@ struct WindowAccumulator {
   int nTemp = 0;
   int nRh = 0;
   int totalTicks = 0;
+  int sinLecturaScd = 0, sinLecturaPms = 0;
+  int fueraRangoCo2 = 0, fueraRangoTemp = 0, fueraRangoRh = 0;
 
   void reset() {
     sumCo2 = sumPm25 = sumPm10 = sumTemp = sumRh = 0.0;
     nCo2 = nPm25 = nPm10 = nTemp = nRh = 0;
     totalTicks = 0;
+    sinLecturaScd = sinLecturaPms = 0;
+    fueraRangoCo2 = fueraRangoTemp = fueraRangoRh = 0;
   }
 } winAcc;
 
@@ -129,6 +133,7 @@ WindowEvaluation lastEval;
 
 // Memoria de la ventana inmediatamente anterior para persistencia K=2 (Tabla 6.7)
 struct PreviousWindowState {
+  String ventanaId = "";
   bool validCompleto = false;
   int icgScore = -1;
   String causasICG[5];
@@ -141,6 +146,8 @@ uint8_t pmsFrame[32];
 uint8_t pmsIndex = 0;
 unsigned long pmsChecksumErrors = 0;
 unsigned long scdReadErrors = 0;
+unsigned long pmsRangeErrors = 0;
+unsigned long lastPmsChecksumErrors = 0, lastPmsRangeErrors = 0, lastScdReadErrors = 0;
 
 unsigned long lastScdPollMs      = 0;
 unsigned long lastScdRetryMs     = 0;
@@ -218,7 +225,7 @@ String jsonEscape(const String &s) {
 //    Reutiliza integramente las rutinas verificadas en esp32_prueba.ino
 // -----------------------------------------------------------------------------
 void acceptPmsFrame() {
-  if (pmsFrame[2] != 0x00 || pmsFrame[3] != 0x1C) return;
+  if (pmsFrame[2] != 0x00 || pmsFrame[3] != 0x1C) { ++pmsChecksumErrors; return; }
   uint16_t checksum = 0;
   for (int i = 0; i < 30; ++i) checksum += pmsFrame[i];
   if (checksum != wordBE(&pmsFrame[30])) {
@@ -237,6 +244,8 @@ void acceptPmsFrame() {
     pms.pm10  = pm10;
     pms.atMs  = millis();
     pms.valid = true;
+  } else {
+    ++pmsRangeErrors;
   }
 }
 
@@ -412,15 +421,17 @@ void sampleSensorsTick(unsigned long now) {
     if (scd.co2 >= 0 && scd.co2 <= 40000) {
       winAcc.sumCo2 += scd.co2;
       winAcc.nCo2++;
-    }
+    } else ++winAcc.fueraRangoCo2;
     if (scd.tempC >= -20.0f && scd.tempC <= 60.0f) {
       winAcc.sumTemp += scd.tempC;
       winAcc.nTemp++;
-    }
+    } else ++winAcc.fueraRangoTemp;
     if (scd.rh >= 0.0f && scd.rh <= 100.0f) {
       winAcc.sumRh += scd.rh;
       winAcc.nRh++;
-    }
+    } else ++winAcc.fueraRangoRh;
+  } else {
+    ++winAcc.sinLecturaScd;
   }
 
   if (pms.valid && fresh(pms.atMs, now)) {
@@ -428,6 +439,8 @@ void sampleSensorsTick(unsigned long now) {
     winAcc.nPm25++;
     winAcc.sumPm10 += pms.pm10;
     winAcc.nPm10++;
+  } else {
+    ++winAcc.sinLecturaPms;
   }
 }
 
@@ -479,6 +492,19 @@ WindowEvaluation evaluateCurrentWindow() {
   seqOrdenRegistro++;
   prefs.putUInt("seq_order", seqOrdenRegistro);
   ev.ordenRegistro = seqOrdenRegistro;
+  ev.ventanaAnteriorId = prevWin.ventanaId;
+  if (prevWin.ventanaId.length() == 0) ev.motivoPersistencia = "sin_ventana_anterior";
+  else if (!prevWin.validCompleto) ev.motivoPersistencia = "anterior_incompleta";
+  else if (prevWin.icgScore < 3) ev.motivoPersistencia = "anterior_sin_alerta";
+  else ev.motivoPersistencia = "causa_no_coincidente";
+  ev.sinLecturaScd = winAcc.sinLecturaScd;
+  ev.sinLecturaPms = winAcc.sinLecturaPms;
+  ev.fueraRangoScd = winAcc.fueraRangoCo2 + winAcc.fueraRangoTemp + winAcc.fueraRangoRh;
+  ev.fueraRangoCo2 = winAcc.fueraRangoCo2;
+  ev.fueraRangoTemp = winAcc.fueraRangoTemp;
+  ev.fueraRangoRh = winAcc.fueraRangoRh;
+  ev.tramasPmsInvalidas = pmsChecksumErrors - lastPmsChecksumErrors;
+  ev.lecturasScdFallidas = scdReadErrors - lastScdReadErrors;
 
   // Verificar hora UTC via NTP
   ev.horaVerificada = getVerifiedWindowIsoTimestamp(ev.timestampIso);
@@ -595,6 +621,9 @@ WindowEvaluation evaluateCurrentWindow() {
         String c = ev.causasICG[i];
         if (ev.icgScore >= 3 && causeInPrevWindow(c)) {
           persistedCause = true;
+          ev.persistenciaConfirmada = true;
+          ev.motivoPersistencia = "causa_confirmada";
+          if (ev.numCausasConfirmadas < 5) ev.causasConfirmadas[ev.numCausasConfirmadas++] = c;
         }
         if (c == "CO2") {
           addUniqueRecommendation(ev, ev.icgScore == 1
@@ -642,6 +671,7 @@ WindowEvaluation evaluateCurrentWindow() {
 
     // Actualizar memoria de persistencia K=2 para la siguiente ventana
     prevWin.validCompleto = true;
+    prevWin.ventanaId = cfg.nodoId + ":" + String(ev.ordenRegistro);
     prevWin.icgScore      = ev.icgScore;
     prevWin.numCausasICG  = ev.numCausasICG;
     for (int i = 0; i < ev.numCausasICG; ++i) {
@@ -655,6 +685,8 @@ WindowEvaluation evaluateCurrentWindow() {
     ev.celdaMatriz  = "";
     addUniqueRecommendation(ev, "Falta información para una recomendación global.");
     prevWin.validCompleto = false;
+    prevWin.ventanaId = cfg.nodoId + ":" + String(ev.ordenRegistro);
+    ev.motivoPersistencia = "actual_incompleta";
   } else {
     // Ningun dominio valido
     ev.icgEstado    = "dato_insuficiente";
@@ -662,6 +694,8 @@ WindowEvaluation evaluateCurrentWindow() {
     ev.icgCategoria = "";
     ev.celdaMatriz  = "";
     prevWin.validCompleto = false;
+    prevWin.ventanaId = cfg.nodoId + ":" + String(ev.ordenRegistro);
+    ev.motivoPersistencia = "actual_sin_datos";
   }
 
   return ev;
@@ -670,7 +704,7 @@ WindowEvaluation evaluateCurrentWindow() {
 // Serializa el paquete JSON exactamente con el esquema esperado por `TelemetryPacket` en api/main.py
 String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
   String p;
-  p.reserve(1024);
+  p.reserve(2300);
   p += "{";
   p += "\"nodoId\":\"" + jsonEscape(cfg.nodoId) + "\",";
   p += "\"salaId\":\"" + jsonEscape(cfg.salaId) + "\",";
@@ -681,6 +715,33 @@ String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
     p += "\"timestamp\":null,";
   }
   p += "\"ordenRegistro\":" + String(ev.ordenRegistro) + ",";
+  p += "\"ventanaId\":\"" + jsonEscape(cfg.nodoId + ":" + String(ev.ordenRegistro)) + "\",";
+  p += "\"ventanaInicio\":" + (ev.ventanaInicioIso.length() ? "\"" + ev.ventanaInicioIso + "\"" : String("null")) + ",";
+  p += "\"ventanaFinReal\":" + (ev.ventanaFinRealIso.length() ? "\"" + ev.ventanaFinRealIso + "\"" : String("null")) + ",";
+  p += "\"firmwareVersion\":\"" + String(FIRMWARE_VERSION) + "\",";
+  p += "\"mediasClasificacion\":{";
+  p += "\"co2\":" + (ev.validCo2 ? String(ev.meanCo2, 8) : String("null")) + ",";
+  p += "\"pm25\":" + (ev.validPm25 ? String(ev.meanPm25, 8) : String("null")) + ",";
+  p += "\"pm10\":" + (ev.validPm10 ? String(ev.meanPm10, 8) : String("null")) + ",";
+  p += "\"temperatura\":" + (ev.validTemp ? String(ev.meanTemp, 8) : String("null")) + ",";
+  p += "\"humedad\":" + (ev.validRh ? String(ev.meanRh, 8) : String("null")) + "},";
+  p += "\"subniveles\":{";
+  p += "\"co2\":" + (ev.validCo2 ? String(ev.sCo2) : String("null")) + ",";
+  p += "\"pm25\":" + (ev.validPm25 ? String(ev.sPm25) : String("null")) + ",";
+  p += "\"pm10\":" + (ev.validPm10 ? String(ev.sPm10) : String("null")) + ",";
+  p += "\"temperatura\":" + (ev.validTemp ? String(ev.sTemp) : String("null")) + ",";
+  p += "\"humedad\":" + (ev.validRh ? String(ev.sRh) : String("null")) + "},";
+  p += "\"persistencia\":{\"ventanaAnteriorId\":" + (ev.ventanaAnteriorId.length() ? "\"" + jsonEscape(ev.ventanaAnteriorId) + "\"" : String("null"));
+  p += ",\"confirmada\":" + String(ev.persistenciaConfirmada ? "true" : "false") + ",\"motivo\":\"" + ev.motivoPersistencia + "\",\"causasConfirmadas\":[";
+  for (int i = 0; i < ev.numCausasConfirmadas; ++i) { if (i) p += ","; p += "\"" + jsonEscape(ev.causasConfirmadas[i]) + "\""; }
+  p += "]},";
+  p += "\"invalidaciones\":{\"co2\":{\"sinLectura\":" + String(ev.sinLecturaScd) + ",\"fueraRango\":" + String(ev.fueraRangoCo2) + "},";
+  p += "\"temperatura\":{\"sinLectura\":" + String(ev.sinLecturaScd) + ",\"fueraRango\":" + String(ev.fueraRangoTemp) + "},";
+  p += "\"humedad\":{\"sinLectura\":" + String(ev.sinLecturaScd) + ",\"fueraRango\":" + String(ev.fueraRangoRh) + "},";
+  p += "\"pm25\":{\"sinLectura\":" + String(ev.sinLecturaPms) + ",\"tramaInvalida\":" + String(ev.tramasPmsInvalidas) + ",\"fueraRango\":" + String(pmsRangeErrors - lastPmsRangeErrors) + "},";
+  p += "\"pm10\":{\"sinLectura\":" + String(ev.sinLecturaPms) + ",\"tramaInvalida\":" + String(ev.tramasPmsInvalidas) + ",\"fueraRango\":" + String(pmsRangeErrors - lastPmsRangeErrors) + "},";
+  p += "\"scd40ErroresLectura\":" + String(ev.lecturasScdFallidas) + "},";
+  p += "\"calibracion\":{\"versionConfiguracion\":\"" + String(FIRMWARE_VERSION) + "\",\"compensacionTermicaFirmwareC\":0,\"compensacionSensorC\":null,\"calibracionInternaSensor\":\"no_leida\"},";
   p += "\"conteosValidos\":{";
   p += "\"co2\":" + String(ev.nCo2) + ",";
   p += "\"pm25\":" + String(ev.nPm25) + ",";
@@ -693,11 +754,11 @@ String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
   p += "\"esRetransmision\":" + String(esRetransmision ? "true" : "false") + ",";
 
   // Medias fisicas de 5 minutos (null si n < 24)
-  p += "\"co2\":" + (ev.validCo2 ? String(ev.meanCo2, 2) : String("null")) + ",";
-  p += "\"pm25\":" + (ev.validPm25 ? String(ev.meanPm25, 2) : String("null")) + ",";
-  p += "\"pm10\":" + (ev.validPm10 ? String(ev.meanPm10, 2) : String("null")) + ",";
-  p += "\"temperatura\":" + (ev.validTemp ? String(ev.meanTemp, 2) : String("null")) + ",";
-  p += "\"humedad\":" + (ev.validRh ? String(ev.meanRh, 2) : String("null")) + ",";
+  p += "\"co2\":" + (ev.validCo2 ? String(ev.meanCo2, 8) : String("null")) + ",";
+  p += "\"pm25\":" + (ev.validPm25 ? String(ev.meanPm25, 8) : String("null")) + ",";
+  p += "\"pm10\":" + (ev.validPm10 ? String(ev.meanPm10, 8) : String("null")) + ",";
+  p += "\"temperatura\":" + (ev.validTemp ? String(ev.meanTemp, 8) : String("null")) + ",";
+  p += "\"humedad\":" + (ev.validRh ? String(ev.meanRh, 8) : String("null")) + ",";
 
   // ICAI
   p += "\"icaiScore\":" + (ev.icaiScore >= 0 ? String(ev.icaiScore) : String("null")) + ",";
@@ -1375,14 +1436,30 @@ void runConnectivityFsm(unsigned long now) {
 // -----------------------------------------------------------------------------
 void processFiveMinuteWindow(unsigned long now) {
   if (now - lastWindowCloseMs < WINDOW_DURATION_MS) return;
+  const unsigned long elapsedMs = now - lastWindowCloseMs;
   lastWindowCloseMs = now;
 
   WindowEvaluation ev = evaluateCurrentWindow();
+  if (ev.horaVerificada) {
+    const time_t endEpoch = time(nullptr);
+    struct tm utc;
+    char stamp[32];
+    gmtime_r(&endEpoch, &utc);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    ev.ventanaFinRealIso = stamp;
+    const time_t startEpoch = endEpoch - static_cast<time_t>(elapsedMs / 1000UL);
+    gmtime_r(&startEpoch, &utc);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    ev.ventanaInicioIso = stamp;
+  }
   lastEval = ev;
   winAcc.reset();
 
   const bool deferred = !(fsmState == MQTT_STREAMING && mqttConnected && pendingMsgId == -1 && bufCount == 0);
   String payload = buildTelemetryJson(ev, deferred);
+  lastPmsChecksumErrors = pmsChecksumErrors;
+  lastPmsRangeErrors = pmsRangeErrors;
+  lastScdReadErrors = scdReadErrors;
   Serial.println("[VENTANA 5M] Paquete generado:");
   Serial.println(payload);
 

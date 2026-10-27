@@ -246,6 +246,16 @@ CREATE TABLE IF NOT EXISTS telemetria (
     "versionReglas"       VARCHAR(20)      NOT NULL, -- Versión de reglas aplicada por el ESP32
     "ventanasDescartadas" INTEGER          NOT NULL DEFAULT 0 CHECK ("ventanasDescartadas" >= 0),
     "esRetransmision"     BOOLEAN          NOT NULL DEFAULT FALSE,
+    "ventanaId"           VARCHAR(80),
+    "ventanaInicio"       TIMESTAMPTZ,
+    "ventanaFinReal"      TIMESTAMPTZ,
+    "ordenRegistro"       BIGINT,
+    "firmwareVersion"     VARCHAR(20),
+    "mediasClasificacion" JSONB,
+    subniveles            JSONB,
+    persistencia          JSONB,
+    invalidaciones        JSONB,
+    calibracion           JSONB,
 
     -- Medias físicas de 5 minutos (sin corrección previa en PM2.5/PM10 según RF-12)
     co2                   DOUBLE PRECISION CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 40000)),
@@ -287,6 +297,7 @@ SELECT create_hypertable(
 );
 
 CREATE INDEX IF NOT EXISTS idx_telemetria_nodo_time ON telemetria("nodoId", "timestamp" DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetria_nodo_orden ON telemetria("nodoId", "ordenRegistro") WHERE "ordenRegistro" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_telemetria_icg_score ON telemetria("salaId", "timestamp" DESC) WHERE "icgScore" >= 3;
 
 -- 4.2. Tabla `telemetria_tiempo_incierto` (Sección 6.4.2, línea 1316 de main.tex)

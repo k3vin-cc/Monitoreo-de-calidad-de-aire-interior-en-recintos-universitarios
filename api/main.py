@@ -90,6 +90,15 @@ class TelemetryPacket(BaseModel):
     hora_verificada: bool = Field(alias="horaVerificada")
     timestamp: datetime | None = None
     orden_registro: int | None = Field(default=None, alias="ordenRegistro", ge=0)
+    ventana_id: str | None = Field(default=None, alias="ventanaId", max_length=80)
+    ventana_inicio: datetime | None = Field(default=None, alias="ventanaInicio")
+    ventana_fin_real: datetime | None = Field(default=None, alias="ventanaFinReal")
+    firmware_version: str | None = Field(default=None, alias="firmwareVersion", max_length=20)
+    medias_clasificacion: dict[str, float | None] | None = Field(default=None, alias="mediasClasificacion")
+    subniveles: dict[str, int | None] | None = None
+    persistencia: dict[str, Any] | None = None
+    invalidaciones: dict[str, Any] | None = None
+    calibracion: dict[str, Any] | None = None
     conteos_validos: dict[str, int] = Field(default_factory=dict, alias="conteosValidos")
     version_reglas: str = Field(default="desconocida", alias="versionReglas", max_length=20)
     ventanas_descartadas: int = Field(default=0, alias="ventanasDescartadas", ge=0)
@@ -114,7 +123,7 @@ class TelemetryPacket(BaseModel):
     celda_matriz: str | None = Field(default=None, alias="celdaMatriz", max_length=5)
     recomendaciones: list[str] | None = None
 
-    @field_validator("timestamp")
+    @field_validator("timestamp", "ventana_inicio", "ventana_fin_real")
     @classmethod
     def timestamp_is_aware(cls, value):
         if value is not None and value.tzinfo is None:
@@ -290,6 +299,12 @@ mqtt_dynsec_response: dict[str, Any] | None = None
 
 def persist_packet(raw: dict[str, Any]):
     packet = TelemetryPacket.model_validate(raw)
+    if packet.ventana_id and packet.orden_registro is not None and packet.ventana_id != f"{packet.nodo_id}:{packet.orden_registro}":
+        raise ValueError("ventanaId no coincide con nodoId y ordenRegistro")
+    if packet.ventana_inicio and packet.ventana_fin_real and packet.ventana_inicio > packet.ventana_fin_real:
+        raise ValueError("ventanaInicio posterior a ventanaFinReal")
+    if packet.subniveles and any(level is not None and not 0 <= level <= 4 for level in packet.subniveles.values()):
+        raise ValueError("subnivel fuera de 0..4")
     with db() as conn, conn.cursor() as cur:
         # Lock the node until telemetry commits so retirement cannot race a packet
         # that passed validation just before the node was retired.
@@ -315,14 +330,23 @@ def persist_packet(raw: dict[str, Any]):
                 "salaId","nodoId","timestamp","conteosValidos","versionReglas","ventanasDescartadas","esRetransmision",
                 co2,pm25,pm10,temperatura,humedad,"icaiScore","icaiCategoria","icaiEstado","causasICAI",
                 "ictScore","ictCategoria","ictEstado","causasICT","icgScore","icgCategoria","icgEstado",
-                "causasICG","celdaMatriz",recomendaciones)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                "causasICG","celdaMatriz",recomendaciones,
+                "ventanaId","ventanaInicio","ventanaFinReal","ordenRegistro","firmwareVersion",
+                "mediasClasificacion",subniveles,persistencia,invalidaciones,calibracion)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT ("salaId","timestamp") DO NOTHING''', (
                 sala_id, packet.nodo_id, packet.timestamp, Jsonb(packet.conteos_validos), packet.version_reglas,
                 packet.ventanas_descartadas, packet.es_retransmision, packet.co2, packet.pm25, packet.pm10,
                 packet.temperatura, packet.humedad, packet.icai_score, packet.icai_categoria, packet.icai_estado,
                 packet.causas_icai, packet.ict_score, packet.ict_categoria, packet.ict_estado, packet.causas_ict,
-                packet.icg_score, packet.icg_categoria, packet.icg_estado, packet.causas_icg, packet.celda_matriz, packet.recomendaciones))
+                packet.icg_score, packet.icg_categoria, packet.icg_estado, packet.causas_icg, packet.celda_matriz, packet.recomendaciones,
+                packet.ventana_id, packet.ventana_inicio, packet.ventana_fin_real, packet.orden_registro, packet.firmware_version,
+                Jsonb(packet.medias_clasificacion) if packet.medias_clasificacion is not None else None,
+                Jsonb(packet.subniveles) if packet.subniveles is not None else None,
+                Jsonb(packet.persistencia) if packet.persistencia is not None else None,
+                Jsonb(packet.invalidaciones) if packet.invalidaciones is not None else None,
+                Jsonb(packet.calibracion) if packet.calibracion is not None else None))
             inserted = cur.rowcount == 1
             if inserted:
                 alerts = cur.execute('''SELECT id,variable,nivel,"valorMedido" FROM alertas

@@ -1,6 +1,7 @@
 """Genera el ConfigMap del API desde fuentes versionadas, sin credenciales."""
 
 from pathlib import Path
+import os
 
 import yaml
 
@@ -9,7 +10,7 @@ manifest_path = ROOT / "k8s" / "04-api-code.yaml"
 manifest = {
     "apiVersion": "v1",
     "kind": "ConfigMap",
-    "metadata": {"name": "calidad-api-code", "namespace": "aira"},
+    "metadata": {"name": "calidad-api-code", "namespace": os.getenv("AIRA_K8S_NAMESPACE", "aira")},
     "data": {
         "main.py": (ROOT / "api" / "main.py").read_text(encoding="utf-8"),
         "requirements.txt": (ROOT / "api" / "requirements.txt").read_text(encoding="utf-8"),

@@ -11,7 +11,7 @@
 #endif
 
 // Identificacion y trazabilidad de reglas (RF-12)
-#define FIRMWARE_VERSION "v1.0.7"
+#define FIRMWARE_VERSION "v1.0.8"
 #define VERSION_REGLAS   "reglas-2026.1"
 
 // MODO DE PRUEBA RAPIDA:
@@ -68,6 +68,21 @@ struct WindowEvaluation {
   bool horaVerificada = false;
   String timestampIso = "";
   uint32_t ordenRegistro = 0;
+  String ventanaInicioIso = "";
+  String ventanaFinRealIso = "";
+  String ventanaAnteriorId = "";
+  bool persistenciaConfirmada = false;
+  String motivoPersistencia = "sin_ventana_anterior";
+  String causasConfirmadas[5];
+  int numCausasConfirmadas = 0;
+  uint16_t sinLecturaScd = 0;
+  uint16_t sinLecturaPms = 0;
+  uint16_t fueraRangoScd = 0;
+  uint16_t fueraRangoCo2 = 0;
+  uint16_t fueraRangoTemp = 0;
+  uint16_t fueraRangoRh = 0;
+  uint32_t tramasPmsInvalidas = 0;
+  uint32_t lecturasScdFallidas = 0;
 
   bool validCo2 = false;
   bool validPm25 = false;
