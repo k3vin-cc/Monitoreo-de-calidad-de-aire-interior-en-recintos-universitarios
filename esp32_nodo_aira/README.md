@@ -1,6 +1,6 @@
 # Firmware del nodo ESP32
 
-`esp32_nodo_aira.ino` lee SCD40 y PMS5003, calcula ICAI/ICT/ICG por ventanas de cinco minutos, muestra lecturas y niveles en ST7789 y publica MQTT QoS 1 sobre WSS. Cuando no puede entregar una ventana, la conserva en LittleFS y reintenta. La versión declarada en `config.h` es `v1.0.7` con reglas `reglas-2026.1`; compruébala antes de compilar o registrar un binario.
+`esp32_nodo_aira.ino` lee SCD40 y PMS5003, calcula ICAI/ICT/ICG por ventanas de cinco minutos, muestra lecturas y niveles en ST7789 y publica MQTT QoS 1 sobre WSS. Cuando no puede entregar una ventana, la conserva en LittleFS y reintenta. La versión declarada en `config.h` es `v1.0.8` con reglas `reglas-2026.1`; compruébala antes de compilar o registrar un binario. Desde v1.0.8 cada paquete incluye los datos de auditoría descritos en [CAMBIOS_AUDITORIA_ESP32_V108.md](../CAMBIOS_AUDITORIA_ESP32_V108.md).
 
 ## 1. Revisar placa y cableado
 
