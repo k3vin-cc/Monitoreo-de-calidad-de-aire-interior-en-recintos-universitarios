@@ -1,9 +1,20 @@
 const API_BASE = '/api';
 let accessToken = sessionStorage.getItem('aira.accessToken') || '';
 const listeners = new Set();
+let refreshInFlight = null;
 export const session = {
   get token(){return accessToken;},
-  set(token,user){accessToken=token||''; if(accessToken)sessionStorage.setItem('aira.accessToken',accessToken);else sessionStorage.removeItem('aira.accessToken'); if(user)sessionStorage.setItem('aira.user',JSON.stringify(user));else sessionStorage.removeItem('aira.user'); listeners.forEach(fn=>fn());},
+  set(token,user,expiresIn){
+    const next=token||'';
+    const sameToken=next===accessToken;
+    accessToken=next;
+    if(accessToken)sessionStorage.setItem('aira.accessToken',accessToken);else sessionStorage.removeItem('aira.accessToken');
+    if(user)sessionStorage.setItem('aira.user',JSON.stringify(user));else if(!accessToken)sessionStorage.removeItem('aira.user');
+    if(Number.isFinite(expiresIn)&&expiresIn>0)sessionStorage.setItem('aira.expiresAt',String(Date.now()+expiresIn*1000));
+    else if(!accessToken)sessionStorage.removeItem('aira.expiresAt');
+    else if(!sameToken)sessionStorage.removeItem('aira.expiresAt');
+    listeners.forEach(fn=>fn());
+  },
   get user(){try{return JSON.parse(sessionStorage.getItem('aira.user')||'null')}catch{return null}},
   subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)}
 };
@@ -12,11 +23,28 @@ async function request(path, options={}) {
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
   const firmwareDownload = path.startsWith('/firmwares/') && path.endsWith('/descarga');
-  const response = await fetch(`${API_BASE}${path}`,{...options,headers,credentials:'include',cache:firmwareDownload?'no-store':options.cache});
+  const send=()=>fetch(`${API_BASE}${path}`,{...options,headers:new Headers(headers),credentials:'include',cache:firmwareDownload?'no-store':options.cache});
+  let response = await send();
+  const authPath=path.startsWith('/auth/');
+  if(response.status===401&&!authPath&&accessToken){
+    try{await renewAccessToken();headers.set('Authorization',`Bearer ${accessToken}`);response=await send()}
+    catch(error){if(error.status===401||error.status===403)session.set('',null);throw error}
+    if(response.status===401)session.set('',null);
+  }
   if (response.status === 204) return null;
   if (!response.ok) { let message=`Error ${response.status}`;try{const body=await response.json();message=body.detail||body.message||message}catch{} const err=new Error(message);err.status=response.status;throw err; }
   const type=response.headers.get('content-type')||'';
   return type.includes('application/json') ? response.json() : response.blob();
+}
+async function renewAccessToken(){
+  if(!refreshInFlight)refreshInFlight=(async()=>{
+    const response=await fetch(`${API_BASE}/auth/renovar`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'include'});
+    let body={};try{body=await response.json()}catch{}
+    if(!response.ok){const error=new Error(body.detail||body.message||`Error ${response.status}`);error.status=response.status;throw error}
+    session.set(body.accessToken,session.user,body.expiresIn);
+    return body;
+  })().finally(()=>{refreshInFlight=null});
+  return refreshInFlight;
 }
 const query = params => {const q=new URLSearchParams();Object.entries(params||{}).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')q.set(k,String(v))});const s=q.toString();return s?`?${s}`:''};
 export const api = {
@@ -24,7 +52,7 @@ export const api = {
   login: body=>request('/auth/login',{method:'POST',body:JSON.stringify(body)}),
   guestLogin: ()=>request('/auth/invitado',{method:'POST'}),
   logout: ()=>request('/auth/logout',{method:'POST'}),
-  renew: ()=>request('/auth/renovar',{method:'POST',body:'{}'}),
+  renew: ()=>renewAccessToken(),
   profile: ()=>request('/perfil'), updateProfile: body=>request('/perfil',{method:'PATCH',body:JSON.stringify(body)}),
   sectors: ()=>request('/sectores'), createSector:body=>request('/sectores',{method:'POST',body:JSON.stringify(body)}), patchSector:(id,body)=>request(`/sectores/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}), deleteSector:(id,body={})=>request(`/sectores/${encodeURIComponent(id)}`,{method:'DELETE',body:JSON.stringify(body)}),
   buildings: sectorId=>request('/edificios'+query({sectorId})), createBuilding:body=>request('/edificios',{method:'POST',body:JSON.stringify(body)}), patchBuilding:(id,body)=>request(`/edificios/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}), deleteBuilding:(id,body={})=>request(`/edificios/${encodeURIComponent(id)}`,{method:'DELETE',body:JSON.stringify(body)}),

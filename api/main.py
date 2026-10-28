@@ -48,6 +48,7 @@ PUBLIC_WEB_URL = os.getenv("PUBLIC_WEB_URL", "").rstrip("/")
 FIRMWARE_DIR = Path(os.getenv("FIRMWARE_DIR", "/data/firmwares"))
 ACCESS_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "30"))
 REFRESH_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "7"))
+SESSION_IDLE_MINUTES = int(os.getenv("SESSION_IDLE_MINUTES", "30"))
 if not JWT_SECRET:
     log.warning("JWT_SECRET_KEY no está configurada; los endpoints de autenticación rechazarán solicitudes")
 
@@ -362,8 +363,8 @@ def persist_packet(raw: dict[str, Any]):
                         "ventanaConfirmacion": packet.timestamp.isoformat()})
                 if alerts and TELEGRAM_BOT_TOKEN:
                     asyncio.run_coroutine_threadsafe(telegram_alerts(sala_id, alerts), hub.loop)
-                if resolved and TELEGRAM_BOT_TOKEN:
-                    asyncio.run_coroutine_threadsafe(telegram_alerts(sala_id, resolved, resolved=True), hub.loop)
+                # Las resoluciones de Telegram esperan una segunda ventana de recuperación.
+                # El sondeo del bot también las retoma después de reinicios.
             return {"tabla": "telemetria", "insertada": inserted}
         if packet.orden_registro is None:
             raise ValueError("ordenRegistro requerido cuando horaVerificada=false")
@@ -595,6 +596,18 @@ def telegram_state_text(room: dict[str, Any]) -> str:
     recommendations = room.get("recomendaciones") or []
     if recommendations and recommendations[0]:
         lines.append("Recomendación: " + recommendations[0])
+    active = fetch_all('''SELECT variable,nivel FROM alertas WHERE "salaId"=%s AND estado='activa'
+        ORDER BY nivel DESC,variable''', (room["salaId"],))
+    lines.append("Condiciones que requieren atención: " + (", ".join(f"{item['variable']} (nivel {item['nivel']})" for item in active) if active else "ninguna en la última ventana"))
+    pending = fetch_all('''SELECT a.variable,a."resueltaEn" FROM alertas a
+        WHERE a."salaId"=%s AND a.estado='resuelta'
+          AND NOT EXISTS (SELECT 1 FROM telemetria t WHERE t."salaId"=a."salaId"
+            AND t."timestamp"=a."resueltaEn"+INTERVAL '5 minutes')
+          AND NOT EXISTS (SELECT 1 FROM alertas newer WHERE newer."salaId"=a."salaId"
+            AND newer.variable=a.variable AND newer."ventanaConfirmacion">a."resueltaEn")
+        ORDER BY a."resueltaEn" DESC LIMIT 5''', (room["salaId"],))
+    if pending:
+        lines.append("Mejoría pendiente de confirmar: " + ", ".join(item["variable"] for item in pending) + ". Falta la siguiente medición válida.")
     return "\n".join(lines)
 
 
@@ -948,54 +961,91 @@ async def telegram_handle_update(update: dict[str, Any]):
         await telegram_send(chat_id, "No reconozco ese comando. Usa /ayuda para ver las opciones.")
 
 
-def telegram_alert_text(room: dict[str, Any], alert: dict[str, Any], reading: dict[str, Any] | None, resolved: bool) -> str:
+def telegram_alert_text(room: dict[str, Any], alert: dict[str, Any], reading: dict[str, Any] | None, resolved: bool, next_reading: dict[str, Any] | None = None) -> str:
     raw_variable = str(alert["variable"]).upper().replace(".", "").replace("_", "")
     variable, unit = TELEGRAM_VARIABLES.get(raw_variable, (str(alert["variable"]), ""))
     level = int(alert["nivel"] or 0)
     severity = TELEGRAM_SEVERITY.get(level, "sin categoría")
     when = alert.get("resueltaEn") if resolved else alert.get("ventanaConfirmacion")
-    lines = [f"{'✅ Alerta resuelta' if resolved else '🔴 Alerta confirmada'} · Nivel {level} ({severity})",
-             f"📍 {telegram_location(room)}", f"{variable}: {telegram_measurement(alert.get('valorMedido'), unit)}",
-             f"Ventana: {telegram_time(when)}"]
+    lines = [f"{'✅ La condición dejó de aparecer en dos mediciones consecutivas' if resolved else '🔴 Se detectó una condición que requiere atención'} · Nivel {level} ({severity})",
+             f"📍 {telegram_location(room)}"]
     if resolved:
-        lines.append("La condición ya no figura como activa en la última ventana procesada.")
+        current = (reading or {}).get({"CO2":"co2","PM25":"pm25","PM10":"pm10","TEMPERATURA":"temperatura","HUMEDAD":"humedad"}.get(raw_variable, ""))
+        next_value = (next_reading or {}).get({"CO2":"co2","PM25":"pm25","PM10":"pm10","TEMPERATURA":"temperatura","HUMEDAD":"humedad"}.get(raw_variable, ""))
+        lines.extend([f"{variable} cuando se detectó: {telegram_measurement(alert.get('valorMedido'), unit)} · {telegram_time(alert.get('ventanaConfirmacion'))}",
+                      f"Primera medición con mejoría: {telegram_measurement(current, unit)} · {telegram_time(when)}",
+                      f"Segunda medición con mejoría: {telegram_measurement(next_value, unit)} · {telegram_time((next_reading or {}).get('timestamp'))}",
+                      "Continúa observando el espacio."])
+        if current is None:
+            lines.append("La causa dejó de aparecer en el índice, pero no hay lectura válida de esta variable.")
     else:
-        lines.append("La condición se confirmó en dos ventanas consecutivas.")
+        lines.extend([f"{variable}: {telegram_measurement(alert.get('valorMedido'), unit)}", f"Ventana: {telegram_time(when)}"])
+        lines.append("La condición apareció en dos mediciones consecutivas.")
+        previous = fetch_one('''SELECT 1 FROM alertas WHERE "salaId"=%s AND variable=%s
+            AND estado='resuelta' AND "resueltaEn"<%s AND "resueltaEn">=%s-INTERVAL '20 minutes'
+            LIMIT 1''', (room["salaId"], alert["variable"], when, when)) if room.get("salaId") else None
+        if previous:
+            lines.append("La condición volvió a aparecer; la mejoría anterior no se mantuvo.")
         recommendations = (reading or {}).get("recomendaciones") or []
         if recommendations and recommendations[0]:
             lines.append(f"Recomendación: {recommendations[0]}")
-        if reading and reading.get("esRetransmision"):
-            lines.append("Esta ventana llegó con retraso.")
+    received = (reading or {}).get("recibidoEn")
+    if received:
+        lines.append(f"Recibida: {telegram_time(received)}")
+        window = when if isinstance(when, datetime) else datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+        if window.tzinfo is None:
+            window = window.replace(tzinfo=timezone.utc)
+        lag = (received - window).total_seconds()
+        if lag < -60:
+            lines.append("⚠️ Hora de ventana posterior a su recepción; revisar reloj del nodo.")
+        elif lag > 600 or (reading or {}).get("esRetransmision"):
+            lines.append("⚠️ Dato recibido con retraso.")
     return "\n".join(lines)
 
 
 async def telegram_alerts(room_id: str, alerts: list[dict[str, Any]], resolved: bool = False):
-    room = fetch_one('''SELECT s.nombre AS "salaNombre",p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",
+    room = fetch_one('''SELECT s.id AS "salaId",s.nombre AS "salaNombre",p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",
         sec.nombre AS "sectorNombre" FROM salas s JOIN pisos p ON p.id=s."pisoId"
         JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores sec ON sec.id=ed."sectorId" WHERE s.id=%s''', (room_id,))
     if room is None:
         return
+    messages = []
+    alert_ids = []
     for alert_ref in alerts:
         alert = fetch_one('''SELECT id,variable,nivel,"valorMedido","ventanaConfirmacion","resueltaEn",estado
             FROM alertas WHERE id=%s AND "salaId"=%s''', (alert_ref["id"], room_id))
         if not alert or alert["estado"] != ("resuelta" if resolved else "activa"):
             continue
-        reading = None if resolved else fetch_one('''SELECT recomendaciones,"esRetransmision" FROM telemetria
-            WHERE "salaId"=%s AND "timestamp"=%s''', (room_id, alert["ventanaConfirmacion"]))
-        recipients = fetch_all('''SELECT tv."chatId",u.id AS "usuarioId" FROM telegram_vinculos tv
+        reading = fetch_one('''SELECT co2,pm25,pm10,temperatura,humedad,recomendaciones,"esRetransmision","recibidoEn"
+            FROM telemetria WHERE "salaId"=%s AND "timestamp"=%s''',
+            (room_id, alert["resueltaEn"] if resolved else alert["ventanaConfirmacion"]))
+        next_reading = fetch_one('''SELECT "timestamp",co2,pm25,pm10,temperatura,humedad FROM telemetria
+            WHERE "salaId"=%s AND "timestamp"=%s''', (room_id, alert["resueltaEn"]+timedelta(minutes=5))) if resolved else None
+        messages.append(telegram_alert_text(room, alert, reading, resolved, next_reading))
+        alert_ids.append(alert["id"])
+    if not messages:
+        return
+    recipients = fetch_all('''SELECT tv."chatId",u.id AS "usuarioId" FROM telegram_vinculos tv
             JOIN usuarios u ON u.id=tv."usuarioId" JOIN telegram_preferencias_salas pref ON pref."usuarioId"=u.id
             JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
             JOIN edificios ed ON ed.id=p."edificioId"
             WHERE pref."salaId"=%s AND tv."chatId">0 AND tv."chatVinculado"=TRUE AND tv."avisosActivos"=TRUE
             AND (pref."pausadoHasta" IS NULL OR pref."pausadoHasta"<=NOW())
             AND u.estado='activo' AND (u.rol='ADMIN' OR ed.id=ANY(u."assignedEdificios"))''', (room_id,))
-        message = telegram_alert_text(room, alert, reading, resolved)
-        actions = [("Gestionar avisos", f"a|{room_id}")]
-        if PUBLIC_WEB_URL:
-            actions.insert(0, ("Ver sala", f"{PUBLIC_WEB_URL}/salas/{urllib.parse.quote(room_id, safe='')}"))
-        buttons = [actions]
-        for recipient in recipients:
-            allowed = fetch_one('''SELECT 1 FROM telegram_vinculos tv JOIN usuarios u ON u.id=tv."usuarioId"
+    actions = [("Gestionar avisos", f"a|{room_id}")]
+    if PUBLIC_WEB_URL:
+        actions.insert(0, ("Ver sala", f"{PUBLIC_WEB_URL}/salas/{urllib.parse.quote(room_id, safe='')}"))
+    buttons = [actions]
+    for recipient in recipients:
+        kind = "resuelta" if resolved else "confirmada"
+        pending = fetch_all('''SELECT id FROM alertas WHERE id=ANY(%s::text[])
+            AND NOT EXISTS (SELECT 1 FROM telegram_avisos_enviados sent
+                WHERE sent."alertaId"=alertas.id AND sent."chatId"=%s AND sent.tipo=%s)''',
+            (alert_ids, recipient["chatId"], kind))
+        pending_ids = {item["id"] for item in pending}
+        if not pending_ids:
+            continue
+        allowed = fetch_one('''SELECT 1 FROM telegram_vinculos tv JOIN usuarios u ON u.id=tv."usuarioId"
                 JOIN telegram_preferencias_salas pref ON pref."usuarioId"=u.id AND pref."salaId"=%s
                 JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
                 JOIN edificios ed ON ed.id=p."edificioId"
@@ -1003,17 +1053,90 @@ async def telegram_alerts(room_id: str, alerts: list[dict[str, Any]], resolved: 
                 AND tv."avisosActivos"=TRUE AND (pref."pausadoHasta" IS NULL OR pref."pausadoHasta"<=NOW())
                 AND u.estado='activo' AND (u.rol='ADMIN' OR ed.id=ANY(u."assignedEdificios"))''',
                 (room_id, recipient["chatId"], recipient["usuarioId"]))
-            if allowed:
-                try:
-                    await telegram_send(recipient["chatId"], message, buttons)
-                except Exception as exc:
-                    log.warning("No se pudo enviar aviso de Telegram (%s)", type(exc).__name__)
+        if allowed:
+            try:
+                selected = [part for part, alert_id in zip(messages, alert_ids) if alert_id in pending_ids]
+                selected_message = (f"📌 {len(selected)} avisos en la misma sala y ventana\n\n" if len(selected)>1 else "") + "\n\n".join(selected)
+                await telegram_send(recipient["chatId"], selected_message, buttons)
+                for alert_id in pending_ids:
+                    execute('''INSERT INTO telegram_avisos_enviados ("alertaId","chatId",tipo)
+                        VALUES (%s,%s,%s) ON CONFLICT DO NOTHING''', (alert_id, recipient["chatId"], kind))
+            except Exception as exc:
+                log.warning("No se pudo enviar aviso de Telegram (%s)", type(exc).__name__)
+
+
+async def telegram_confirmed_resolutions():
+    rows = fetch_all('''SELECT a.id,a."salaId",a."resueltaEn" FROM alertas a
+        CROSS JOIN telegram_aviso_control control
+        JOIN telemetria next_window ON next_window."salaId"=a."salaId"
+            AND next_window."timestamp"=a."resueltaEn"+INTERVAL '5 minutes'
+        WHERE control.id=1 AND a.estado='resuelta' AND a."timestamp">=control."desdeEn"
+          AND a."resueltaEn"<=NOW() AND next_window."icgEstado"='completo'
+          AND (next_window."icgScore"<3 OR NOT (a.variable=ANY(COALESCE(next_window."causasICG", '{}'::TEXT[]))))
+          AND NOT EXISTS (SELECT 1 FROM alertas newer WHERE newer."salaId"=a."salaId"
+              AND newer.variable=a.variable AND newer."ventanaConfirmacion">a."resueltaEn"
+              AND newer."ventanaConfirmacion"<=next_window."timestamp")
+          AND EXISTS (SELECT 1 FROM telegram_vinculos tv JOIN telegram_preferencias_salas pref
+              ON pref."usuarioId"=tv."usuarioId" AND pref."salaId"=a."salaId"
+              WHERE tv."chatVinculado"=TRUE AND tv."avisosActivos"=TRUE
+                AND (pref."pausadoHasta" IS NULL OR pref."pausadoHasta"<=NOW())
+                AND NOT EXISTS (SELECT 1 FROM telegram_avisos_enviados sent
+                    WHERE sent."alertaId"=a.id AND sent."chatId"=tv."chatId" AND sent.tipo='resuelta'))
+        ORDER BY a."resueltaEn" LIMIT 100''')
+    grouped = {}
+    for row in rows:
+        grouped.setdefault((row["salaId"], row["resueltaEn"]), []).append(row)
+    for (room_id, _), refs in grouped.items():
+        await telegram_alerts(room_id, refs, resolved=True)
+
+
+async def telegram_pending_improvements():
+    rows = fetch_all('''SELECT a.id,a.variable,a."valorMedido",a."salaId",a."resueltaEn",
+            t.co2,t.pm25,t.pm10,t.temperatura,t.humedad,t."recibidoEn",
+            s.nombre AS "salaNombre",p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre"
+        FROM alertas a CROSS JOIN telegram_aviso_control control
+        JOIN telemetria t ON t."salaId"=a."salaId" AND t."timestamp"=a."resueltaEn"
+        JOIN salas s ON s.id=a."salaId" JOIN pisos p ON p.id=s."pisoId"
+        JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores sec ON sec.id=ed."sectorId"
+        WHERE control.id=1 AND a.estado='resuelta' AND a."timestamp">=control."desdeEn"
+          AND a."resueltaEn"<=NOW() AND t."recibidoEn">NOW()-INTERVAL '10 minutes'
+          AND NOT EXISTS (SELECT 1 FROM telemetria next_window WHERE next_window."salaId"=a."salaId"
+              AND next_window."timestamp"=a."resueltaEn"+INTERVAL '5 minutes')
+          AND NOT EXISTS (SELECT 1 FROM alertas newer WHERE newer."salaId"=a."salaId"
+              AND newer.variable=a.variable AND newer."ventanaConfirmacion">a."resueltaEn")
+        ORDER BY a."resueltaEn" DESC LIMIT 100''')
+    for row in rows:
+        recipients = fetch_all('''SELECT tv."chatId" FROM telegram_vinculos tv
+            JOIN usuarios u ON u.id=tv."usuarioId"
+            JOIN telegram_preferencias_salas pref ON pref."usuarioId"=u.id AND pref."salaId"=%s
+            JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
+            WHERE tv."chatVinculado"=TRUE AND tv."chatId">0 AND tv."avisosActivos"=TRUE
+              AND (pref."pausadoHasta" IS NULL OR pref."pausadoHasta"<=NOW())
+              AND u.estado='activo' AND (u.rol='ADMIN' OR p."edificioId"=ANY(u."assignedEdificios"))
+              AND NOT EXISTS (SELECT 1 FROM telegram_avisos_enviados sent WHERE sent."alertaId"=%s
+                  AND sent."chatId"=tv."chatId" AND sent.tipo='mejoria')''', (row["salaId"], row["id"]))
+        key = str(row["variable"]).upper().replace(".", "").replace("_", "")
+        variable, unit = TELEGRAM_VARIABLES.get(key, (row["variable"], ""))
+        value = row.get({"CO2":"co2","PM25":"pm25","PM10":"pm10","TEMPERATURA":"temperatura","HUMEDAD":"humedad"}.get(key, ""))
+        message = (f"🟡 La última medición mejoró; falta otra para confirmarlo.\n📍 {telegram_location(row)}\n"
+                   f"{variable}: {telegram_measurement(value, unit)}\n"
+                   f"Medida: {telegram_time(row['resueltaEn'])}\nRecibida: {telegram_time(row['recibidoEn'])}\n"
+                   "Continúa observando el espacio.")
+        for recipient in recipients:
+            try:
+                await telegram_send(recipient["chatId"], message)
+                execute('''INSERT INTO telegram_avisos_enviados ("alertaId","chatId",tipo)
+                    VALUES (%s,%s,'mejoria') ON CONFLICT DO NOTHING''', (row["id"], recipient["chatId"]))
+            except Exception as exc:
+                log.warning("No se pudo enviar aviso de mejoría (%s)", type(exc).__name__)
 
 
 async def telegram_polling():
     offset = 0
     while True:
         try:
+            await telegram_pending_improvements()
+            await telegram_confirmed_resolutions()
             result = await asyncio.to_thread(telegram_api,"getUpdates",{"offset":offset,"timeout":20,"allowed_updates":"[\"message\",\"callback_query\"]"})
             for update in result or []:
                 offset=max(offset,int(update["update_id"])+1)
@@ -1303,8 +1426,10 @@ def refresh_session(body: RefreshIn, request: Request, response: Response):
     token_hash = hashlib.sha256(refresh.encode()).hexdigest()
     row = fetch_one('''SELECT s.id AS "sessionId",u.id,u.nombre,u.email,u.telefono,u.rol,u.estado,u."assignedEdificios"
         FROM sesiones_usuario s JOIN usuarios u ON u.id=s."usuarioId"
-        WHERE s."refreshTokenHash"=%s AND s.revocada=FALSE AND s."expiraEn">NOW() AND u.estado='activo' ''', (token_hash,))
+        WHERE s."refreshTokenHash"=%s AND s.revocada=FALSE AND s."expiraEn">NOW()
+          AND s."ultimaActividadEn">NOW()-(%s * INTERVAL '1 minute') AND u.estado='activo' ''', (token_hash, SESSION_IDLE_MINUTES))
     if not row:
+        execute('UPDATE sesiones_usuario SET revocada=TRUE WHERE "refreshTokenHash"=%s AND revocada=FALSE', (token_hash,))
         raise HTTPException(401, "Refresh token inválido")
     new_refresh = secrets.token_urlsafe(48)
     with db() as conn, conn.cursor() as cur:
