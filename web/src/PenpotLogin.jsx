@@ -17,9 +17,9 @@ export default function PenpotLogin() {
     setError('');
     try {
       const result = await api.login({ email: form.email.value, password: form.password.value });
-      session.set(result.accessToken, result.usuario);
+      session.set(result.accessToken, result.usuario, result.expiresIn);
       const profile = await api.profile();
-      session.set(result.accessToken, profile);
+      session.set(session.token, profile);
       navigate(location.state?.from || '/dashboard', { replace: true });
     } catch (cause) {
       setError(cause.message);
@@ -33,9 +33,9 @@ export default function PenpotLogin() {
     setError('');
     try {
       const result = await api.guestLogin();
-      session.set(result.accessToken, result.usuario);
+      session.set(result.accessToken, result.usuario, result.expiresIn);
       const profile = await api.profile();
-      session.set(result.accessToken, profile);
+      session.set(session.token, profile);
       navigate('/dashboard', { replace: true });
     } catch (cause) {
       setError(cause.message);
