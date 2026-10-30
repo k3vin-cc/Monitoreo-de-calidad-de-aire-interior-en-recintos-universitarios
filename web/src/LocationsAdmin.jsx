@@ -11,7 +11,8 @@ const cfgs={
 };
 export default function LocationsAdmin(){
  const [tab,setTab]=useState('sectores'),[data,setData]=useState({sectores:[],edificios:[],pisos:[],salas:[]}),[busy,setBusy]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState(''),[dialog,setDialog]=useState(null),[retireDialog,setRetireDialog]=useState(null),[listQuery,setListQuery]=useState('');
- async function reload(){setBusy(true);try{const [sectores,edificios,pisos,salas]=await Promise.all([api.sectors(),api.buildings(),api.floors(),api.rooms({})]);setData({sectores,edificios,pisos,salas});setError('')}catch(e){setError(e.message)}finally{setBusy(false)}}
+ /** Nombre: reload. Razón: obtiene las listas iniciales con una sola solicitud para reducir la espera de Espacios. Entradas: ninguna; usa la sesión administrativa. Salida: actualiza las listas visibles o el error. Efectos: consulta la API. */
+ async function reload(){setBusy(true);try{const result=await api.spacesSummary();setData(result);setError('')}catch(e){setError(e.message)}finally{setBusy(false)}}
  useEffect(()=>{reload()},[]);
  const cfg=cfgs[tab],rows=data[tab],name=(key,id)=>(data[key]||[]).find(x=>x.id===id)?.nombre||id||'—';
  const trail=(entity,item)=>{
