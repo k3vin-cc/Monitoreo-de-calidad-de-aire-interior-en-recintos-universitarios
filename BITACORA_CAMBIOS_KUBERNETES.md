@@ -129,3 +129,23 @@ El usuario autorizó publicar en `origin/main` los siguientes commits locales, c
 - `9b7962e`: recuperación de assets y corrección de instrucciones de despliegue.
 
 Este registro acompaña el mismo lote de publicación. Los archivos sin seguimiento preexistentes del área de trabajo no se incluyen. El destino es el repositorio `k3vin-cc/Monitoreo-de-calidad-de-aire-interior-en-recintos-universitarios`, rama `main`.
+
+## 2026-10-30 — Análisis de mejoras de Usuarios
+
+Se leyó el contrato y se revisaron componente activo, ruta, CSS, servicios HTTP, esquemas y endpoints de usuarios. Los hallazgos y plan están en `PLAN_MEJORAS_USUARIOS.md`. Destacan guardado por pérdida de foco, falta de bloqueo de operaciones, errores detrás de modales, recargas completas y transacciones separadas en edición de cuenta. No se modificó código ni se desplegó una nueva versión. La inspección visual quedó pendiente porque el navegador conectado devolvió `browser.user is unavailable`; tampoco se midieron tiempos reales de rendimiento. Implementación pendiente de autorización del plan.
+
+El usuario precisó que realizará la validación visual. Se revisó nuevamente el código y se amplió el plan con reversión por lotes: referencia Git de base `9e505c1`, respaldo de ConfigMaps y Deployments reales antes de implementar, restauración conjunta de assets y verificación por hashes. Se aclara que revertir código o despliegue no revierte operaciones guardadas en cuentas. Esta ampliación modifica únicamente documentación; no se desplegaron cambios de aplicación.
+
+## 2026-10-30 — Primer lote de mejoras de Usuarios autorizado y desplegado
+
+- `web/src/PenpotUsers.jsx`: diálogos nativos accesibles, selección de edificios mediante casillas y guardado explícito, formulario de contraseña con confirmación, mensajes dentro del diálogo, bloqueo de envíos y cierre durante escritura. Se agregaron filtro por estado, contador y limpieza de filtros. Las ediciones usan la respuesta de PATCH y las eliminaciones actualizan la lista local; ya no se recargan edificios después de cada cambio. Los conteos compartidos se calculan una sola vez por cambio de lista.
+- Funciones del componente: `reload`, `create`, `update`, `removeUser` y `UserRow` modificadas; `openDialog`, `closeDialog`, `submitEdit`, `UserDialog`, `BuildingChoices`, `DialogActions` y `CreateUserForm` agregadas. Cada una documenta entradas, salida y efectos.
+- `web/src/penpot.css`: estilos de Usuarios acotados a `.penpotUsers`; tipografía/controles mayores, foco visible, tabla con desplazamiento y formularios adaptados a móvil.
+- `web/src/services.js`: los errores 422 con lista de validaciones ahora indican campo y motivo. Es una función compartida por otras páginas; conserva rutas, cookies y respuestas exitosas.
+- `PLAN_MEJORAS_USUARIOS.md`: plan autorizado, procedimiento de reversión concreto y estado de primer/segundo lote.
+
+Antes de editar se creó la etiqueta local `respaldo/usuarios-20261030` sobre `9e505c1` y la rama `codex/mejoras-usuarios`. Los ConfigMaps y Deployments reales se guardaron fuera de Git en `C:\Users\corte\.codex\backups\aira-usuarios-20261030-antes`, con hashes y script `Restaurar.ps1`. Se validó sintaxis del script y restauración web con dry-run del servidor; no se ejecutó la reversión real.
+
+Build Vite correcto y prueba HTTP simulada correcta para mensajes 422, PATCH, envío de cookies y JSON. Se reemplazaron los tres ConfigMaps web, comprobando éxito antes de reiniciar. Rollout completo, 45 archivos idénticos por SHA-256, todos los assets disponibles por HTTP y salud API `ok`. No se escribieron cuentas reales ni se realizaron pruebas visuales; la revisión visual queda a cargo del usuario.
+
+Sin cambios de esquema, API, permisos ni dependencias. El backend transaccional pertenece al segundo lote posterior a la revisión visual. La reversión del frontend restaura archivos publicados; no deshace operaciones guardadas sobre usuarios. Push pendiente de autorización.
