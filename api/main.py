@@ -1479,6 +1479,48 @@ def update_profile(body: dict[str, Any], user=Depends(current_user)):
     return fetch_one('SELECT id,nombre,email,telefono,rol,"assignedEdificios" FROM usuarios WHERE id=%s', (user["id"],))
 
 
+@app.get("/espacios/resumen")
+def spaces_summary(user=Depends(allow_roles("ADMIN"))):
+    """
+    Nombre   : spaces_summary
+    Razón    : Carga en una sola consulta las listas usadas al abrir Espacios.
+    Entradas : Usuario autenticado; solo se admite el rol ADMIN.
+    Salida   : Objeto con sectores, edificios, pisos y salas activos.
+    Efectos  : Ninguno; consulta PostgreSQL sin conteos históricos.
+    """
+    return fetch_one('''SELECT
+        (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.nombre), '[]'::jsonb) FROM (
+            SELECT se.id,se.nombre,se.descripcion,
+                (SELECT COUNT(*) FROM edificios ed WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL) AS "edificiosActivos",
+                (SELECT COUNT(*) FROM pisos p JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL AND p."retiradoEn" IS NULL) AS "pisosActivos",
+                (SELECT COUNT(*) FROM salas r JOIN pisos p ON p.id=r."pisoId" JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id AND r."retiradoEn" IS NULL) AS "salasActivas",
+                (SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" JOIN pisos p ON p.id=r."pisoId" JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
+            FROM sectores se WHERE se."retiradoEn" IS NULL
+        ) x) AS sectores,
+        (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.nombre), '[]'::jsonb) FROM (
+            SELECT ed.id,ed."sectorId",ed.nombre,ed.direccion,
+                (SELECT COUNT(*) FROM pisos p WHERE p."edificioId"=ed.id AND p."retiradoEn" IS NULL) AS "pisosActivos",
+                (SELECT COUNT(*) FROM salas r JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id AND r."retiradoEn" IS NULL) AS "salasActivas",
+                (SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
+            FROM edificios ed JOIN sectores se ON se.id=ed."sectorId" WHERE ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL
+        ) x) AS edificios,
+        (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x."edificioId",x.nivel), '[]'::jsonb) FROM (
+            SELECT p.id,p."edificioId",p.nombre,p.nivel,
+                (SELECT COUNT(*) FROM salas r WHERE r."pisoId"=p.id AND r."retiradoEn" IS NULL) AS "salasActivas",
+                (SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" WHERE r."pisoId"=p.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
+            FROM pisos p JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores se ON se.id=ed."sectorId"
+            WHERE p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL
+        ) x) AS pisos,
+        (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.nombre), '[]'::jsonb) FROM (
+            SELECT s.id,s."pisoId",p."edificioId",ed."sectorId",s.nombre,s."capacidadOcupantes",
+                sec.nombre AS "sectorNombre",ed.nombre AS "edificioNombre",p.nombre AS "pisoNombre",
+                (SELECT COUNT(*) FROM nodos n WHERE n."salaId"=s.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
+            FROM salas s JOIN pisos p ON p.id=s."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
+            JOIN sectores sec ON sec.id=ed."sectorId"
+            WHERE s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND sec."retiradoEn" IS NULL
+        ) x) AS salas''')
+
+
 @app.get("/sectores")
 def sectores(incluirConteosHistorial: bool = True, user=Depends(current_user)):
     if user["rol"] in ("ADMIN", "GUEST"):
@@ -1721,16 +1763,34 @@ def delete_room(salaId: str, body: dict[str, bool] = Body(default={}), user=Depe
 
 
 @app.get("/salas/{salaId}/estado")
-def sala_state(salaId: str, user=Depends(current_user)):
+def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(current_user)):
     ensure_room_access(user, salaId)
     row = fetch_one('SELECT * FROM vw_estado_actual_salas WHERE "salaId"=%s', (salaId,))
     if not row:
         raise HTTPException(404, "Sala no encontrada")
-    if user["rol"] in ("ADMIN", "ANALISTA"):
+    if incluirComplementos and user["rol"] in ("ADMIN", "ANALISTA"):
         row["particulas24hOMS"] = fetch_one('SELECT * FROM vw_particulas_24h_oms WHERE "salaId"=%s', (salaId,))
-    if user["rol"] != "GUEST":
+    if incluirComplementos and user["rol"] != "GUEST":
         row["alertasActivas"] = fetch_all('SELECT id,variable,"valorMedido",nivel,"ventanaConfirmacion" FROM alertas WHERE "salaId"=%s AND estado=\'activa\' ORDER BY "ventanaConfirmacion" DESC', (salaId,))
     return row
+
+
+@app.get("/salas/{salaId}/estado/complementos")
+def sala_state_complements(salaId: str, user=Depends(current_user)):
+    """
+    Nombre   : sala_state_complements
+    Razón    : Obtiene los datos secundarios de sala después del estado actual.
+    Entradas : salaId de la ruta y usuario autenticado con acceso a la sala.
+    Salida   : Complementos permitidos para el rol del usuario.
+    Efectos  : Ninguno; consulta vistas y alertas de PostgreSQL.
+    """
+    ensure_room_access(user, salaId)
+    result = {}
+    if user["rol"] in ("ADMIN", "ANALISTA"):
+        result["particulas24hOMS"] = fetch_one('SELECT * FROM vw_particulas_24h_oms WHERE "salaId"=%s', (salaId,))
+    if user["rol"] != "GUEST":
+        result["alertasActivas"] = fetch_all('SELECT id,variable,"valorMedido",nivel,"ventanaConfirmacion" FROM alertas WHERE "salaId"=%s AND estado=\'activa\' ORDER BY "ventanaConfirmacion" DESC', (salaId,))
+    return result
 
 
 @app.get("/salas/{salaId}/telemetria")
