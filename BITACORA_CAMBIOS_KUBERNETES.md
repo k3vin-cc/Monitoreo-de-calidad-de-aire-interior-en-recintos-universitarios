@@ -1,0 +1,80 @@
+# Bitácora de cambios del proyecto AIRA en Kubernetes
+
+Este documento registra cambios realizados en el proyecto Kubernetes, su propósito, archivos afectados, validaciones y acciones de recuperación. Se actualizará junto con los cambios futuros de este proyecto.
+
+## Estado operativo
+
+- Clúster/contexto usado: `estudiante-kcortes`.
+- Namespace de la aplicación: `student-kcortes`.
+- Sitio: `https://kcortes.dev.censei.cl`.
+- Última comprobación registrada: 2026-10-30. Los Deployments `calidad-api`, `calidad-web`, `calidad-db` y `calidad-mqtt` estaban `1/1` disponibles; los cuatro Pods estaban `Running`.
+- La comprobación interna de `http://127.0.0.1:8080/api/healthz` desde el Pod web respondió `{"status":"ok"}`.
+
+## 2026-10-30 — Autorización WebSocket, exportaciones y límite de acceso invitado
+
+### Propósito
+
+Corregir la entrega de eventos WebSocket fuera del ámbito autorizado, respetar la expiración e inactividad de sesión, evitar fórmulas ejecutables en CSV, limitar el uso de memoria en exportaciones históricas, incluir el login de invitado en el límite por IP y evitar asignar el rol `GUEST` desde el administrador.
+
+### Archivos y cambios
+
+- `api/main.py`
+  - `Hub.broadcast`: valida tipo y sala del evento; aplica ámbito de edificio y rol al enviar eventos; reserva alertas para `ADMIN` y `ANALISTA`; permite al invitado sólo eventos de ventana; desconecta sesiones expiradas o inactivas con cierre `4401`. Los eventos fuera de ámbito se descartan sin invalidar la sesión.
+  - `session_from_token`: conserva la expiración del JWT en la información usada por la conexión WebSocket.
+  - `csv_safe_text`: neutraliza valores de texto que podrían interpretarse como fórmula en una hoja de cálculo.
+  - `stream_room_export`: transmite exportaciones CSV/JSON en bloques desde un cursor PostgreSQL en lugar de cargar todo el historial en memoria. La exportación CSV aplica neutralización a las celdas.
+  - El CSV de Telegram aplica la misma neutralización. No cambia su límite de 1000 filas.
+- `web/src/ui.jsx`
+  - `HistoryPage.download`: convierte la respuesta JSON en un `Blob` descargable, compatible con `URL.createObjectURL`.
+  - El alta de usuarios ya no ofrece `GUEST` como rol asignable. Los registros antiguos con ese rol se muestran como legado deshabilitado.
+- `k8s/06-ingress-auth-limit.yaml`
+  - Añade `/api/auth/invitado` al Ingress con la misma política de límite por IP aplicada al login normal: 10 solicitudes por minuto y burst 2.
+
+### Impacto y compatibilidad
+
+- No se modificó el esquema de PostgreSQL ni se añadieron dependencias.
+- Se mantienen las rutas y formatos de exportación existentes.
+- El archivo de Ingress del repositorio conserva sus valores plantilla (`aira` / `aira.example.org`). Para el clúster `student-kcortes` se aplicaron los valores específicos del entorno durante el despliegue.
+- La descarga JSON ahora crea explícitamente el `Blob` antes de guardarlo.
+
+### Verificaciones realizadas
+
+- `python -m py_compile api/main.py`: correcto.
+- `npm run build` en `web/`: correcto con Vite 5.4.21.
+- `git diff --check`: sin errores de whitespace; Git mostró sólo un aviso de conversión LF/CRLF en el manifiesto Ingress.
+- Pruebas sintéticas: neutralización CSV, estructura y serialización JSON, ámbitos/roles WebSocket, expiración de sesión y captura de expiración JWT en `session_from_token`: correctas.
+- Despliegue: ConfigMaps de API y web regenerados; Deployments de API y web reiniciados y rollout completado. Ingress actualizado. Salud interna del API verificada desde el Pod web.
+- No se hizo una prueba de carga del rate limit ni una validación visual manual en navegador.
+
+### Diagnóstico y recuperación
+
+Consultar primero el estado de recursos:
+
+```powershell
+kubectl -n student-kcortes get deployments,pods,ingress -o wide
+kubectl -n student-kcortes logs deployment/calidad-api --tail=200
+kubectl -n student-kcortes logs deployment/calidad-web --tail=200
+```
+
+Comprobar la salud interna del API:
+
+```powershell
+kubectl -n student-kcortes exec deployment/calidad-web -- wget -qO- http://127.0.0.1:8080/api/healthz
+```
+
+Si se requiere volver al código de la imagen actualmente desplegada, primero consultar el historial y confirmar que el rollout anterior corresponde a la versión deseada; después puede usarse `kubectl -n student-kcortes rollout undo deployment/calidad-api` o `kubectl -n student-kcortes rollout undo deployment/calidad-web`. Esto revierte el Deployment, pero los ConfigMaps se deben restaurar por separado si también se desea revertir su contenido. No ejecutar la reversión sin verificar el historial y los ConfigMaps activos.
+
+Para restaurar manifiestos desde Git, aplicar sólo después de verificar el contexto y los valores de entorno:
+
+```powershell
+kubectl config current-context
+kubectl -n student-kcortes get configmap
+```
+
+### Seguimiento Git
+
+Este cambio está preparado para un commit local descriptivo junto con esta bitácora. El `push` requiere autorización explícita posterior, conforme a `contrato-general.md`.
+
+## Registro de cambios futuros
+
+Para cada modificación posterior se añadirá una entrada con fecha, motivo, archivos y funciones afectados, impacto/compatibilidad, validaciones, despliegue y pasos de diagnóstico o recuperación pertinentes. También se anotará el identificador del commit local y si el cambio fue publicado en GitHub.
