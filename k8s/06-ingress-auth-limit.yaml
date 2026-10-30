@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: calidad-auth-login-limit
+  namespace: aira
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rpm: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - aira.example.org
+      secretName: calidad-tls-secret
+  rules:
+    - host: aira.example.org
+      http:
+        paths:
+          - path: /api/auth/login
+            pathType: Exact
+            backend:
+              service:
+                name: calidad-web
+                port:
+                  number: 8080

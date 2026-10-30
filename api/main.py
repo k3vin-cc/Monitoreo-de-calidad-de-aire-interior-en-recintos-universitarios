@@ -26,9 +26,9 @@ import bcrypt
 import jwt
 import paho.mqtt.client as mqtt
 import psycopg
-from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -1178,9 +1178,33 @@ async def lifespan(app: FastAPI):
         mqtt_client.disconnect()
 
 
-app = FastAPI(title="Calidad del Aire API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Calidad del Aire API", version="1.0.0", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(","), allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def verify_same_origin_mutations(request: Request, call_next):
+    """
+    Nombre   : verify_same_origin_mutations
+    Razón    : Rechaza escrituras iniciadas desde otro origen para reducir CSRF.
+    Entradas : Petición HTTP y respuesta producida por FastAPI.
+    Salida   : Respuesta normal o rechazo 403 por origen inválido.
+    Efectos  : Añade no-store a respuestas de autenticación y aprovisionamiento.
+    """
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        source = request.headers.get("origin") or request.headers.get("referer", "")
+        parsed = urllib.parse.urlsplit(source)
+        host = request.headers.get("host", "").lower()
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip().lower()
+        if not parsed.netloc or parsed.netloc.lower() != host or parsed.scheme.lower() != scheme:
+            return JSONResponse(status_code=403, content={"detail": "Origen no autorizado"})
+    response = await call_next(request)
+    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 def make_access(session_id: str, user: dict):
@@ -1213,11 +1237,8 @@ def session_from_token(token: str):
     return row
 
 
-def current_user(request: Request, authorization: str | None = Header(default=None)):
-    token = None
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization[7:]
-    token = token or request.cookies.get("access_token")
+def current_user(request: Request):
+    token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(401, "Autenticación requerida")
     return session_from_token(token)
@@ -1231,12 +1252,24 @@ def allow_roles(*roles: str):
     return dependency
 
 
+@app.get("/auth/sesion")
+def auth_session(user=Depends(current_user)):
+    """
+    Nombre   : auth_session
+    Razón    : Restaura la interfaz desde la cookie sin exponer el JWT a JavaScript.
+    Entradas : Cookie de acceso validada por current_user.
+    Salida   : Datos de sesión mínimos necesarios para representar el rol.
+    Efectos  : Ninguno; solo consulta y actualiza la actividad de la sesión.
+    """
+    return {key: user.get(key) for key in ("id", "nombre", "email", "telefono", "rol", "assignedEdificios")}
+
+
 def allowed_buildings(user):
     return None if user["rol"] in ("ADMIN", "GUEST") else (user["assignedEdificios"] or [])
 
 
-def without_guest_history(rows, user):
-    if user["rol"] != "GUEST":
+def without_restricted_history(rows, user):
+    if user["rol"] not in ("GUEST", "VIEWER"):
         return rows
     hidden = {"telemetriaTotal", "telemetriaInciertaTotal", "alertasTotal"}
     return [{key: value for key, value in row.items() if key not in hidden} for row in rows]
@@ -1379,9 +1412,9 @@ def retire_location(entity: str, entity_id: str, user, borrar_historial: bool = 
 def healthz():
     try:
         fetch_one("SELECT 1 AS ok")
-        return {"status": "ok", "database": "ok", "mqtt": bool(mqtt_client)}
-    except psycopg.Error as exc:
-        raise HTTPException(503, f"Base de datos no disponible: {exc.sqlstate or 'error'}")
+        return {"status": "ok"}
+    except psycopg.Error:
+        raise HTTPException(503, "Servicio no disponible")
 
 
 @app.post("/auth/login")
@@ -1399,7 +1432,7 @@ def login(body: LoginIn, response: Response):
     access = make_access(session_id, row)
     response.set_cookie("access_token", access, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower()=="true", samesite="lax", max_age=ACCESS_MINUTES*60)
     response.set_cookie("refresh_token", refresh, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower()=="true", samesite="lax", max_age=REFRESH_DAYS*86400, path="/auth")
-    return {"accessToken": access, "tokenType": "bearer", "expiresIn": ACCESS_MINUTES*60,
+    return {"tokenType": "cookie", "expiresIn": ACCESS_MINUTES*60,
             "usuario": {k: row[k] for k in ("id", "nombre", "email", "telefono", "rol", "assignedEdificios")}}
 
 
@@ -1413,14 +1446,14 @@ def guest_login(response: Response):
                          "iat": now, "exp": expires}, JWT_SECRET, algorithm="HS256")
     response.set_cookie("access_token", access, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower()=="true", samesite="lax", max_age=8*60*60)
     response.delete_cookie("refresh_token", path="/auth")
-    return {"accessToken": access, "tokenType": "bearer", "expiresIn": 8*60*60,
+    return {"tokenType": "cookie", "expiresIn": 8*60*60,
             "usuario": {"id": "guest", "nombre": "Invitado", "email": None, "telefono": None,
                         "rol": "GUEST", "assignedEdificios": []}}
 
 
 @app.post("/auth/renovar")
-def refresh_session(body: RefreshIn, request: Request, response: Response):
-    refresh = body.refreshToken or request.cookies.get("refresh_token")
+def refresh_session(request: Request, response: Response):
+    refresh = request.cookies.get("refresh_token")
     if not refresh:
         raise HTTPException(401, "Refresh token requerido")
     token_hash = hashlib.sha256(refresh.encode()).hexdigest()
@@ -1441,7 +1474,7 @@ def refresh_session(body: RefreshIn, request: Request, response: Response):
     access = make_access(str(row["sessionId"]), row)
     response.set_cookie("access_token", access, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower()=="true", samesite="lax", max_age=ACCESS_MINUTES*60)
     response.set_cookie("refresh_token", new_refresh, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower()=="true", samesite="lax", max_age=REFRESH_DAYS*86400, path="/auth")
-    return {"accessToken": access, "tokenType": "bearer", "expiresIn": ACCESS_MINUTES*60}
+    return {"tokenType": "cookie", "expiresIn": ACCESS_MINUTES*60}
 
 
 @app.post("/auth/logout")
@@ -1454,7 +1487,7 @@ def logout(response: Response, user=Depends(current_user)):
 
 
 @app.get("/perfil")
-def get_profile(user=Depends(current_user)):
+def get_profile(user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     return {k: user[k] for k in ("id", "nombre", "email", "telefono", "rol", "assignedEdificios")}
 
 
@@ -1522,8 +1555,8 @@ def spaces_summary(user=Depends(allow_roles("ADMIN"))):
 
 
 @app.get("/sectores")
-def sectores(incluirConteosHistorial: bool = True, user=Depends(current_user)):
-    if user["rol"] in ("ADMIN", "GUEST"):
+def sectores(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+    if user["rol"] == "ADMIN":
         rows = fetch_all('''SELECT se.id,se.nombre,se.descripcion,
             (SELECT COUNT(*) FROM edificios ed WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL) AS "edificiosActivos",
             (SELECT COUNT(*) FROM pisos p JOIN edificios ed ON ed.id=p."edificioId"
@@ -1540,7 +1573,7 @@ def sectores(incluirConteosHistorial: bool = True, user=Depends(current_user)):
                 JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
             FROM sectores se WHERE se."retiradoEn" IS NULL ORDER BY se.nombre''',
             (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial))
-        return without_guest_history(rows, user)
+        return without_restricted_history(rows, user)
     suffix, params = scoped_sql("ed", user)
     return fetch_all('''SELECT DISTINCT se.id,se.nombre,se.descripcion FROM sectores se
         JOIN edificios ed ON ed."sectorId"=se.id JOIN pisos p ON p."edificioId"=ed.id
@@ -1603,7 +1636,7 @@ def delete_sector(sectorId: str, body: dict[str, bool] = Body(default={}), user=
 
 
 @app.get("/edificios")
-def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
+def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     suffix, params = scoped_sql("ed", user)
     where = ' WHERE ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL AND (%s::text IS NULL OR ed."sectorId"=%s::text)'+suffix
     rows = fetch_all('''SELECT ed.id,ed."sectorId",ed.nombre,ed.direccion,
@@ -1616,7 +1649,7 @@ def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True,
             WHERE p."edificioId"=ed.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
         FROM edificios ed JOIN sectores se ON se.id=ed."sectorId"'''+where+' ORDER BY ed.nombre',
         (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, sectorId, sectorId, *params))
-    return without_guest_history(rows, user)
+    return without_restricted_history(rows, user)
 
 
 @app.post("/edificios", status_code=201)
@@ -1658,7 +1691,7 @@ def delete_building(edificioId: str, body: dict[str, bool] = Body(default={}), u
 
 
 @app.get("/pisos")
-def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
+def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT p.id,p."edificioId",p.nombre,p.nivel,
         (SELECT COUNT(*) FROM salas r WHERE r."pisoId"=p.id AND r."retiradoEn" IS NULL) AS "salasActivas",
@@ -1670,7 +1703,7 @@ def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, u
         WHERE p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL
         AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY p."edificioId",p.nivel',
         (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, edificioId, edificioId, *params))
-    return without_guest_history(rows, user)
+    return without_restricted_history(rows, user)
 
 
 @app.post("/pisos", status_code=201)
@@ -1708,7 +1741,7 @@ def delete_floor(pisoId: str, body: dict[str, bool] = Body(default={}), user=Dep
 
 
 @app.get("/salas")
-def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
+def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT s.id,s."pisoId",p."edificioId",ed."sectorId",s.nombre,s."capacidadOcupantes",
         sec.nombre AS "sectorNombre",ed.nombre AS "edificioNombre",p.nombre AS "pisoNombre",
@@ -1721,7 +1754,7 @@ def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConte
         WHERE s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND sec."retiradoEn" IS NULL
         AND (%s::text IS NULL OR s."pisoId"=%s::text) AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY s.nombre',
         (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, pisoId,pisoId,edificioId,edificioId,*params))
-    return without_guest_history(rows, user)
+    return without_restricted_history(rows, user)
 
 
 @app.post("/salas", status_code=201)
@@ -1763,20 +1796,20 @@ def delete_room(salaId: str, body: dict[str, bool] = Body(default={}), user=Depe
 
 
 @app.get("/salas/{salaId}/estado")
-def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(current_user)):
+def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     ensure_room_access(user, salaId)
     row = fetch_one('SELECT * FROM vw_estado_actual_salas WHERE "salaId"=%s', (salaId,))
     if not row:
         raise HTTPException(404, "Sala no encontrada")
     if incluirComplementos and user["rol"] in ("ADMIN", "ANALISTA"):
         row["particulas24hOMS"] = fetch_one('SELECT * FROM vw_particulas_24h_oms WHERE "salaId"=%s', (salaId,))
-    if incluirComplementos and user["rol"] != "GUEST":
+    if incluirComplementos and user["rol"] in ("ADMIN", "ANALISTA"):
         row["alertasActivas"] = fetch_all('SELECT id,variable,"valorMedido",nivel,"ventanaConfirmacion" FROM alertas WHERE "salaId"=%s AND estado=\'activa\' ORDER BY "ventanaConfirmacion" DESC', (salaId,))
     return row
 
 
 @app.get("/salas/{salaId}/estado/complementos")
-def sala_state_complements(salaId: str, user=Depends(current_user)):
+def sala_state_complements(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
     """
     Nombre   : sala_state_complements
     Razón    : Obtiene los datos secundarios de sala después del estado actual.
@@ -1788,7 +1821,7 @@ def sala_state_complements(salaId: str, user=Depends(current_user)):
     result = {}
     if user["rol"] in ("ADMIN", "ANALISTA"):
         result["particulas24hOMS"] = fetch_one('SELECT * FROM vw_particulas_24h_oms WHERE "salaId"=%s', (salaId,))
-    if user["rol"] != "GUEST":
+    if user["rol"] in ("ADMIN", "ANALISTA"):
         result["alertasActivas"] = fetch_all('SELECT id,variable,"valorMedido",nivel,"ventanaConfirmacion" FROM alertas WHERE "salaId"=%s AND estado=\'activa\' ORDER BY "ventanaConfirmacion" DESC', (salaId,))
     return result
 
@@ -1887,8 +1920,8 @@ def node_detail(nodoId: str, user=Depends(allow_roles("ADMIN"))):
     return row
 
 
-@app.get("/nodos/{nodoId}/aprovisionamiento")
-def node_provisioning(nodoId: str, user=Depends(allow_roles("ADMIN"))):
+@app.post("/nodos/{nodoId}/aprovisionamiento")
+def node_provisioning(nodoId: str, response: Response, user=Depends(allow_roles("ADMIN"))):
     credential_generated = False
     with db() as conn, conn.cursor() as cur:
         cur.execute('''SELECT id,"salaId","wifiSsid","macAddress","jwtToken"
@@ -1906,6 +1939,7 @@ def node_provisioning(nodoId: str, user=Depends(allow_roles("ADMIN"))):
     except RuntimeError as exc:
         log.error("No se pudo aprovisionar la credencial MQTT para nodo %s: %s", nodoId, exc)
         raise HTTPException(503, "No se pudo registrar la credencial del nodo en el broker MQTT. Reintenta el aprovisionamiento.") from exc
+    response.headers["Cache-Control"] = "no-store"
     return {"nodoId": row["id"], "salaId": row["salaId"], "wifiSsid": row["wifiSsid"],
             "macAddress": row["macAddress"], "jwtToken": row["jwtToken"]}
 
@@ -2258,7 +2292,20 @@ def put_telegram_preferences(body: dict[str,Any], user=Depends(current_user)):
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    token=ws.query_params.get("token")
+    """
+    Nombre   : websocket_endpoint
+    Razón    : Mantiene eventos en vivo autenticados por cookie y origen del sitio.
+    Entradas : Handshake WebSocket con cookie de acceso y cabecera Origin.
+    Salida   : Flujo de eventos autorizado o cierre de conexión.
+    Efectos  : Registra y elimina la conexión en el concentrador en memoria.
+    """
+    origin = urllib.parse.urlsplit(ws.headers.get("origin", ""))
+    host = ws.headers.get("host", "").lower()
+    scheme = ws.headers.get("x-forwarded-proto", "https").split(",", 1)[0].strip().lower()
+    if not origin.netloc or origin.netloc.lower() != host or origin.scheme.lower() != scheme:
+        await ws.close(code=4403)
+        return
+    token=ws.cookies.get("access_token")
     if not token:
         await ws.close(code=4401)
         return
