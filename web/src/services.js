@@ -49,6 +49,7 @@ async function renewAccessToken(){
 const query = params => {const q=new URLSearchParams();Object.entries(params||{}).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')q.set(k,String(v))});const s=q.toString();return s?`?${s}`:''};
 export const api = {
   request,
+  campus: ()=>request('/campus'),
   login: body=>request('/auth/login',{method:'POST',body:JSON.stringify(body)}),
   guestLogin: ()=>request('/auth/invitado',{method:'POST'}),
   logout: ()=>request('/auth/logout',{method:'POST'}),
@@ -66,11 +67,22 @@ export const api = {
   telegramLink:()=>request('/telegram/vinculo',{method:'POST'}), telegramPrefs:()=>request('/telegram/preferencias'), saveTelegram:body=>request('/telegram/preferencias',{method:'PUT',body:JSON.stringify(body)})
 };
 
-let socket; let reconnectTimer; let stopped=false;
+let socket; let reconnectTimer; let stopped=false; let connectionStatus='disconnected';
 const eventListeners=new Set();
+const statusListeners=new Set();
+/**
+ * Nombre   : updateLiveStatus
+ * Razón    : Mantiene sincronizado el estado visible de la conexión WebSocket.
+ * Entradas : next - estado de conexión que informa el ciclo del socket.
+ * Salida   : Ninguna.
+ * Efectos  : Notifica a los componentes suscritos; no modifica datos persistentes.
+ */
+function updateLiveStatus(next){connectionStatus=next;statusListeners.forEach(fn=>fn(next))}
 export const live = {
+  get status(){return connectionStatus;},
   subscribe(fn){eventListeners.add(fn);return()=>eventListeners.delete(fn)},
-  connect(){stopped=false; if(!session.token)return; clearTimeout(reconnectTimer); try {const scheme=location.protocol==='https:'?'wss:':'ws:'; socket=new WebSocket(`${scheme}//${location.host}/ws?token=${encodeURIComponent(session.token)}`); socket.onmessage=event=>{try{const data=JSON.parse(event.data);eventListeners.forEach(fn=>fn(data))}catch{}};socket.onclose=()=>{if(!stopped&&session.token)reconnectTimer=setTimeout(()=>live.connect(),2500)};}catch{}},
-  close(){stopped=true;clearTimeout(reconnectTimer);socket?.close();socket=null}
+  subscribeStatus(fn){statusListeners.add(fn);fn(connectionStatus);return()=>statusListeners.delete(fn)},
+  connect(){stopped=false;if(!session.token){updateLiveStatus('disconnected');return}clearTimeout(reconnectTimer);try{updateLiveStatus('connecting');const scheme=location.protocol==='https:'?'wss:':'ws:';const current=new WebSocket(`${scheme}//${location.host}/ws?token=${encodeURIComponent(session.token)}`);socket=current;current.onopen=()=>{if(socket===current)updateLiveStatus('connected')};current.onmessage=event=>{try{const data=JSON.parse(event.data);eventListeners.forEach(fn=>fn(data))}catch{}};current.onclose=event=>{if(socket!==current)return;socket=null;if(stopped||!session.token){updateLiveStatus('disconnected');return}if(event.code===4401){renewAccessToken().catch(()=>session.set('',null));return}updateLiveStatus('reconnecting');reconnectTimer=setTimeout(()=>live.connect(),2500)};current.onerror=()=>{if(socket===current)updateLiveStatus('disconnected')}}catch{updateLiveStatus('disconnected');if(session.token)reconnectTimer=setTimeout(()=>live.connect(),2500)}},
+  close(){stopped=true;clearTimeout(reconnectTimer);const current=socket;socket=null;current?.close();updateLiveStatus('disconnected')}
 };
 session.subscribe(()=>{live.close();if(session.token)live.connect()});

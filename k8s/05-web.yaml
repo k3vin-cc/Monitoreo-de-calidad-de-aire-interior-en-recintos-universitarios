@@ -22,7 +22,7 @@ spec:
             - -c
             - >-
               mkdir -p /www/assets && cp /core/index.html /www/index.html &&
-              for file in /core/asset__* /js/asset__*; do
+              for file in /core/asset__* /js/asset__* /main-js/asset__*; do
                 [ -f "$file" ] || continue;
                 name=${file##*/asset__};
                 cp "$file" "/www/assets/$name";
@@ -40,6 +40,9 @@ spec:
               readOnly: true
             - name: web-assets
               mountPath: /js
+              readOnly: true
+            - name: web-main-js
+              mountPath: /main-js
               readOnly: true
             - name: html-root
               mountPath: /www
@@ -90,6 +93,9 @@ spec:
         - name: web-assets
           configMap:
             name: calidad-web-assets
+        - name: web-main-js
+          configMap:
+            name: calidad-web-main-js
             defaultMode: 0444
         - name: html-root
           emptyDir: {}

@@ -1467,12 +1467,16 @@ def update_profile(body: dict[str, Any], user=Depends(current_user)):
         password = body["password"]
         if not isinstance(password, str) or len(password) < 12 or len(password) > 128:
             raise HTTPException(422, "La contraseña debe tener entre 12 y 128 caracteres")
+        current_password = body.get("currentPassword")
+        row = fetch_one("SELECT password FROM usuarios WHERE id=%s", (user["id"],))
+        if not isinstance(current_password, str) or not row or not bcrypt.checkpw(current_password.encode(), row["password"].encode()):
+            raise HTTPException(403, "La contraseña actual es incorrecta")
         allowed["password"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     if not allowed:
         raise HTTPException(400, "No hay campos de perfil válidos")
     assignments = ",".join(f'"{k}"=%s' for k in allowed)
     execute(f'UPDATE usuarios SET {assignments},"updatedAt"=NOW() WHERE id=%s', (*allowed.values(), user["id"]))
-    return get_profile(user)
+    return fetch_one('SELECT id,nombre,email,telefono,rol,"assignedEdificios" FROM usuarios WHERE id=%s', (user["id"],))
 
 
 @app.get("/sectores")
@@ -1499,6 +1503,33 @@ def sectores(user=Depends(current_user)):
         JOIN edificios ed ON ed."sectorId"=se.id JOIN pisos p ON p."edificioId"=ed.id
         JOIN salas s ON s."pisoId"=p.id WHERE se."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL
         AND p."retiradoEn" IS NULL AND s."retiradoEn" IS NULL'''+suffix+" ORDER BY se.nombre", params)
+
+
+@app.get("/campus")
+def campus(user=Depends(current_user)):
+    allowed = allowed_buildings(user)
+    suffix = ' AND ed.id=ANY(%s)' if allowed is not None else ''
+    params = (allowed,) if allowed is not None else ()
+    with db() as conn, conn.cursor() as cur:
+        def read(sql, args):
+            cur.execute(sql, args)
+            return cur.fetchall()
+        sectors = read('''SELECT DISTINCT se.id,se.nombre,se.descripcion FROM sectores se
+        LEFT JOIN edificios ed ON ed."sectorId"=se.id AND ed."retiradoEn" IS NULL
+        WHERE se."retiradoEn" IS NULL'''+suffix+" ORDER BY se.nombre", params)
+        buildings = read('''SELECT ed.id,ed."sectorId",ed.nombre,ed.direccion FROM edificios ed
+        JOIN sectores se ON se.id=ed."sectorId" WHERE ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL'''+suffix+" ORDER BY ed.nombre", params)
+        floors = read('''SELECT p.id,p."edificioId",p.nombre,p.nivel FROM pisos p
+        JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores se ON se.id=ed."sectorId"
+        WHERE p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL'''+suffix+" ORDER BY ed.nombre,p.nivel", params)
+        rooms = read('''SELECT s.id,s."pisoId",p."edificioId",ed."sectorId",s.nombre,
+        sec.nombre AS "sectorNombre",ed.nombre AS "edificioNombre",p.nombre AS "pisoNombre"
+        FROM salas s JOIN pisos p ON p.id=s."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
+        JOIN sectores sec ON sec.id=ed."sectorId" WHERE s."retiradoEn" IS NULL
+        AND p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND sec."retiradoEn" IS NULL'''+suffix+" ORDER BY s.nombre", params)
+        states = read('''SELECT v.* FROM vw_estado_actual_salas v JOIN pisos p ON p.id=v."pisoId"
+        WHERE TRUE'''+suffix.replace('ed.id','p."edificioId"')+' ORDER BY v."salaNombre"', params)
+        return {"sectors": sectors, "buildings": buildings, "floors": floors, "rooms": rooms, "states": states}
 
 
 @app.post("/sectores", status_code=201)
@@ -1722,12 +1753,20 @@ def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: dat
 
 
 @app.get("/alertas")
-def alerts(salaId: str | None = None, estado: Literal["activa", "resuelta"] | None = None, limite: int = Query(500, ge=1, le=5000), user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+def alerts(salaId: str | None = None, estado: Literal["activa", "resuelta"] | None = None,
+           variable: Literal["CO2", "PM2.5", "PM10", "Temperatura", "Humedad"] | None = None,
+           desde: datetime | None = None, hasta: datetime | None = None,
+           limite: int = Query(500, ge=1, le=5000), user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+    if desde and hasta and desde > hasta:
+        raise HTTPException(422, "La fecha inicial debe ser anterior a la fecha final")
     allowed = allowed_buildings(user)
     return fetch_all('''SELECT a.* FROM alertas a JOIN salas s ON s.id=a."salaId" JOIN pisos p ON p.id=s."pisoId"
         WHERE (%s::text IS NULL OR a."salaId"=%s::text) AND (%s::text IS NULL OR a.estado=%s::text)
+        AND (%s::text IS NULL OR a.variable=%s::text)
+        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion">=%s::timestamptz)
+        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion"<=%s::timestamptz)
         AND (%s::text[] IS NULL OR p."edificioId"=ANY(%s::text[])) ORDER BY a."ventanaConfirmacion" DESC LIMIT %s''',
-        (salaId,salaId,estado,estado,allowed,allowed,limite))
+        (salaId,salaId,estado,estado,variable,variable,desde,desde,hasta,hasta,allowed,allowed,limite))
 
 
 @app.get("/nodos")

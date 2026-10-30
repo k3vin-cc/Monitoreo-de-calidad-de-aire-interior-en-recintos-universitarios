@@ -42,6 +42,7 @@ k8s/02-db-init.yaml
 k8s/04-api-code.yaml
 k8s/05-web-core.yaml
 k8s/05-web-assets.yaml
+k8s/05-web-main-js.yaml
 k8s/05-web-files.yaml
 
 # Documentos binarios generados localmente
