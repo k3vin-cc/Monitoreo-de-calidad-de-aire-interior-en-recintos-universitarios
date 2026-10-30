@@ -1583,7 +1583,7 @@ def spaces_summary(user=Depends(allow_roles("ADMIN"))):
 
 
 @app.get("/sectores")
-def sectores(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def sectores(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     if user["rol"] == "ADMIN":
         rows = fetch_all('''SELECT se.id,se.nombre,se.descripcion,
             (SELECT COUNT(*) FROM edificios ed WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL) AS "edificiosActivos",
@@ -1664,7 +1664,7 @@ def delete_sector(sectorId: str, body: dict[str, bool] = Body(default={}), user=
 
 
 @app.get("/edificios")
-def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     suffix, params = scoped_sql("ed", user)
     where = ' WHERE ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL AND (%s::text IS NULL OR ed."sectorId"=%s::text)'+suffix
     rows = fetch_all('''SELECT ed.id,ed."sectorId",ed.nombre,ed.direccion,
@@ -1719,7 +1719,7 @@ def delete_building(edificioId: str, body: dict[str, bool] = Body(default={}), u
 
 
 @app.get("/pisos")
-def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT p.id,p."edificioId",p.nombre,p.nivel,
         (SELECT COUNT(*) FROM salas r WHERE r."pisoId"=p.id AND r."retiradoEn" IS NULL) AS "salasActivas",
@@ -1769,7 +1769,7 @@ def delete_floor(pisoId: str, body: dict[str, bool] = Body(default={}), user=Dep
 
 
 @app.get("/salas")
-def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT s.id,s."pisoId",p."edificioId",ed."sectorId",s.nombre,s."capacidadOcupantes",
         sec.nombre AS "sectorNombre",ed.nombre AS "edificioNombre",p.nombre AS "pisoNombre",
@@ -1824,7 +1824,7 @@ def delete_room(salaId: str, body: dict[str, bool] = Body(default={}), user=Depe
 
 
 @app.get("/salas/{salaId}/estado")
-def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     ensure_room_access(user, salaId)
     row = fetch_one('SELECT * FROM vw_estado_actual_salas WHERE "salaId"=%s', (salaId,))
     if not row:
@@ -1837,7 +1837,7 @@ def sala_state(salaId: str, incluirComplementos: bool = True, user=Depends(allow
 
 
 @app.get("/salas/{salaId}/estado/complementos")
-def sala_state_complements(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER"))):
+def sala_state_complements(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     """
     Nombre   : sala_state_complements
     Razón    : Obtiene los datos secundarios de sala después del estado actual.
