@@ -35,8 +35,9 @@ kubectl rollout status deployment/calidad-mqtt -n aira
 kubectl apply -f k8s/04-api-code.yaml
 kubectl apply -f k8s/04-api.yaml
 kubectl rollout status deployment/calidad-api -n aira
-kubectl apply -f k8s/05-web-core.yaml
-kubectl apply -f k8s/05-web-assets.yaml
+kubectl create -f k8s/05-web-core.yaml
+kubectl create -f k8s/05-web-assets.yaml
+kubectl create -f k8s/05-web-main-js.yaml
 kubectl apply -f k8s/05-web.yaml
 kubectl rollout status deployment/calidad-web -n aira
 kubectl apply -f k8s/06-ingress.yaml
@@ -45,6 +46,8 @@ kubectl apply -f k8s/06-ingress.yaml
 El SQL en `02-db-init.yaml` solo se ejecuta automáticamente cuando PostgreSQL inicializa un directorio de datos **vacío**. Sobre un PVC existente, aplicar el ConfigMap no cambia el esquema. Para una instalación existente, respalda, compara y aplica únicamente la migración necesaria según [`migrations/README.md`](migrations/README.md).
 
 ## 5. Verificar y operar
+
+Para actualizar una web existente, genera los tres ConfigMaps desde el mismo build y usa `kubectl replace -f` para los tres. `kubectl apply` puede exceder el límite de anotaciones tanto en assets como en el JavaScript principal. Comprueba el éxito de cada reemplazo antes de reiniciar `calidad-web`; si falla uno, completa la actualización antes de publicar. Después del rollout, verifica que todos los archivos de `web/dist` existan con el mismo contenido en `/usr/share/nginx/html`, incluidos los módulos cargados al abrir login y las distintas páginas. La sonda de `/` por sí sola no detecta módulos JavaScript faltantes.
 
 Revisa `kubectl get pvc,pods,svc,ingress -n aira`, los `rollout status` anteriores y el endpoint `/healthz` del API a través de la web (`/api/healthz`). Si el API no conecta al broker, revisa `calidad-secrets`, el `initContainer` de Mosquitto y la seguridad dinámica. Si la web sirve una versión anterior, reconstruye `dist`, regenera los ConfigMaps y reinicia el Deployment web de forma controlada. Nunca publiques logs con tokens o datos reales.
 

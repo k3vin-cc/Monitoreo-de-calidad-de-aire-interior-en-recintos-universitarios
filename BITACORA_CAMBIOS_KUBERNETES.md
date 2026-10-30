@@ -110,4 +110,12 @@ El recorrido esperado es inicio → sector → edificio → piso → sala. No se
 
 ### Nota de despliegue
 
-`kubectl apply` no pudo actualizar `calidad-web-main-js` porque el manifiesto generado supera el límite de tamaño de la anotación `last-applied-configuration`. Se actualizó ese ConfigMap con `kubectl replace -f k8s/05-web-main-js.yaml` y luego se reinició y verificó el Deployment web. Los otros ConfigMaps se aplicaron normalmente.
+`kubectl apply` no pudo actualizar los ConfigMaps grandes porque los manifiestos generados superan el límite de tamaño de la anotación `last-applied-configuration`. Inicialmente se reemplazó sólo `calidad-web-main-js`; la revisión posterior de la pantalla en blanco confirmó que también había quedado desactualizado `calidad-web-assets`. La recuperación completa se registra a continuación.
+
+## 2026-10-30 — Recuperación de pantalla en blanco
+
+La actualización parcial del frontend dejó el módulo principal nuevo junto a módulos secundarios antiguos. Los logs mostraron respuestas 404 para `PenpotLogin-Baq8UYcf.js` y `arrow-right-CPM_xp43.js`, lo que impedía iniciar la interfaz.
+
+Se reemplazaron juntos `calidad-web-core`, `calidad-web-assets` y `calidad-web-main-js` desde el mismo build, y se reinició `calidad-web`. El rollout terminó correctamente. Se compararon por SHA-256 los 45 archivos de `web/dist` contra los publicados por el Pod: todos coincidieron. El módulo de login respondió HTTP 200 con tipo JavaScript y `/api/healthz` respondió `ok`. No se modificaron permisos, datos ni esquema de base de datos en esta recuperación.
+
+Se corrigieron `scripts/README.md` y `k8s/README.md` para usar creación inicial y reemplazo de los tres ConfigMaps en actualizaciones. Antes de reiniciar web debe comprobarse que los tres comandos hayan terminado correctamente; después se debe verificar el contenido de todos los assets, además de la sonda de salud. No se realizó validación visual en navegador.
