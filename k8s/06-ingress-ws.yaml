@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: calidad-web-ws-ingress
+  namespace: aira
+  annotations:
+    nginx.ingress.kubernetes.io/enable-access-log: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - aira.example.org
+      secretName: calidad-tls-secret
+  rules:
+    - host: aira.example.org
+      http:
+        paths:
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: calidad-web
+                port:
+                  number: 8080

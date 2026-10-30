@@ -29,7 +29,7 @@ spec:
           args:
             - >-
               python -m pip install --disable-pip-version-check --no-cache-dir --target=/tmp/python-libs -r /app/requirements.txt
-              && PYTHONPATH=/tmp/python-libs python -m uvicorn main:app --host 0.0.0.0 --port 8000
+              && PYTHONPATH=/tmp/python-libs python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level warning --no-access-log
           ports:
             - name: http
               containerPort: 8000
