@@ -114,3 +114,53 @@
 .dangerButton { background: #b33a3a; border-color: #b33a3a; color: #fff; }.dangerButton:hover { background: #962f2f; border-color: #962f2f; }
 .dangerIcon { color: #b33a3a; }.dangerIcon:hover { background: #fbe9e7; color: #962f2f; }
 .currentUserNote { display: block; margin-top: 4px; color: #708896; font-size: 10px; }
+
+/* Usuarios: controles legibles y diálogos aislados de otras páginas. */
+.penpotUsers .usersSummary { margin: 0 0 22px; }
+.penpotUsers .usersFilters { flex-wrap: wrap; align-items: center; }
+.penpotUsers .usersFilters label { flex: 1 1 250px; width: auto; }
+.penpotUsers .usersFilters input { font-size: 14px; background: transparent; }
+.penpotUsers .usersFilters select { font-size: 14px; min-height: 44px; }
+.penpotUsers .usersFilters label { min-height: 44px; }
+.penpotUsers .usersResultCount { font-size: 13px; color: #506b7b; margin: 0 0 12px; }
+.penpotUsers .usersTablePanel table { min-width: 850px; width: 100%; }
+.penpotUsers .usersTablePanel table td { vertical-align: middle; }
+.penpotUsers .usersTablePanel table select { font-size: 14px; min-height: 40px; max-width: 175px; }
+.penpotUsers .usersTablePanel td:first-child { min-width: 190px; overflow-wrap: anywhere; }
+.penpotUsers .usersTablePanel td:nth-child(4) { min-width: 180px; max-width: 300px; }
+.penpotUsers .usersBuildingNames { display: block; font-size: 13px; line-height: 1.6; margin-bottom: 8px; overflow-wrap: anywhere; }
+.penpotUsers .rowActions { flex-wrap: wrap; }
+.penpotUsers .iconBtn { min-width: 40px; min-height: 40px; }
+.penpotUsers .currentUserNote { font-size: 12px; color: #506b7b; line-height: 1.5; }
+.penpotUsers .usersInfo span { font-size: 13px; line-height: 1.6; }
+.penpotUsers .usersInfo b { font-size: 14px; }
+.penpotUsers .usersInfo>svg { flex-shrink: 0; }
+.penpotUsers button:disabled, .penpotUsers select:disabled { opacity: .6; cursor: not-allowed; }
+.penpotUsers :is(button,input,select):focus-visible { outline: 3px solid #007dbc; outline-offset: 3px; }
+.penpotUsers .usersFilters label:focus-within { outline: 3px solid #007dbc; outline-offset: 2px; }
+.penpotUsers .usersModal { width: min(660px, calc(100% - 32px)); max-height: 90vh; max-height: 90dvh; margin: auto; padding: 26px; border: 1px solid #d8e3ec; border-radius: 16px; background: #fff; color: #24465b; box-shadow: 0 20px 70px #0a2d4a33; overflow: auto; }
+.penpotUsers .usersModal::backdrop { background: rgba(15,43,58,.5); }
+.penpotUsers .usersModal .panelHead { margin-bottom: 18px; align-items: center; }
+.penpotUsers .usersModal h2 { font-size: 21px; }
+.penpotUsers .usersModal p { font-size: 14px; line-height: 1.6; }
+.penpotUsers .usersModal .stack label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
+.penpotUsers .usersModal :is(input:not([type=checkbox]),select) { width: 100%; min-height: 44px; border: 1px solid #b5c8d5; border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 16px; background: #fff; color: #24465b; }
+.penpotUsers .usersModal small { color: #506b7b; font-size: 12px; line-height: 1.5; }
+.penpotUsers .usersFormFields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.penpotUsers .usersFullWidth { grid-column: 1 / -1; }
+.penpotUsers .usersTarget { display: flex; flex-direction: column; gap: 5px; background: #f0f6fa; padding: 13px; border-radius: 8px; margin-bottom: 18px; overflow-wrap: anywhere; }
+.penpotUsers .usersTarget span { font-size: 13px; }
+.penpotUsers .usersBuildingChoices { border: 1px solid #cfdee8; border-radius: 10px; padding: 12px; margin: 16px 0 0; min-width: 0; max-height: 300px; overflow-y: auto; }
+.penpotUsers .usersBuildingChoices legend { font-size: 14px; font-weight: 700; padding: 0 5px; }
+.penpotUsers .usersModal .usersBuildingChoices label { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 44px; padding: 7px; cursor: pointer; }
+.penpotUsers .usersBuildingChoices input { width: 19px; height: 19px; flex-shrink: 0; accent-color: #007dbc; }
+.penpotUsers .usersBuildingChoices small { display: block; margin-top: 10px; }
+.penpotUsers .usersAccessNote { background: #eaf5fa; padding: 14px; border-radius: 8px; }
+.penpotUsers .usersModal .dialogActions { margin-top: 20px; }
+@media (max-width:760px) {
+  .penpotUsers .usersFilters label { flex: 0 0 auto; width: 100%; }
+  .penpotUsers .usersModal { padding: 19px; }
+  .penpotUsers .usersModal .formGrid { grid-template-columns: 1fr; }
+  .penpotUsers .usersModal .dialogActions { flex-wrap: wrap; }
+  .penpotUsers .usersModal .dialogActions button { flex: 1; min-height: 44px; }
+}

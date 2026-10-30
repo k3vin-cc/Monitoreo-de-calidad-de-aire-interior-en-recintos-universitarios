@@ -27,7 +27,17 @@ async function request(path, options={}) {
     if(response.status===401)session.set(null);
   }
   if (response.status === 204) return null;
-  if (!response.ok) { let message=`Error ${response.status}`;try{const body=await response.json();message=body.detail||body.message||message}catch{} const err=new Error(message);err.status=response.status;throw err; }
+  if (!response.ok) {
+    let message=`Error ${response.status}`;
+    try {
+      const body=await response.json();
+      // Pydantic devuelve una lista: muestra campo y motivo en lugar de [object Object].
+      message=Array.isArray(body.detail)
+        ? body.detail.map(item=>`${(item.loc||[]).filter(part=>part!=='body').join('.')}: ${item.msg}`).join('; ')
+        : body.detail||body.message||message;
+    } catch { /* Conserva el estado HTTP si la respuesta no tiene JSON válido. */ }
+    const err=new Error(message);err.status=response.status;throw err;
+  }
   const type=response.headers.get('content-type')||'';
   return type.includes('application/json') ? response.json() : response.blob();
 }
