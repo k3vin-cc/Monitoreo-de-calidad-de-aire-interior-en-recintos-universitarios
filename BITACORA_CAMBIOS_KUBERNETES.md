@@ -119,3 +119,13 @@ La actualización parcial del frontend dejó el módulo principal nuevo junto a 
 Se reemplazaron juntos `calidad-web-core`, `calidad-web-assets` y `calidad-web-main-js` desde el mismo build, y se reinició `calidad-web`. El rollout terminó correctamente. Se compararon por SHA-256 los 45 archivos de `web/dist` contra los publicados por el Pod: todos coincidieron. El módulo de login respondió HTTP 200 con tipo JavaScript y `/api/healthz` respondió `ok`. No se modificaron permisos, datos ni esquema de base de datos en esta recuperación.
 
 Se corrigieron `scripts/README.md` y `k8s/README.md` para usar creación inicial y reemplazo de los tres ConfigMaps en actualizaciones. Antes de reiniciar web debe comprobarse que los tres comandos hayan terminado correctamente; después se debe verificar el contenido de todos los assets, además de la sonda de salud. No se realizó validación visual en navegador.
+
+## 2026-10-30 — Publicación en GitHub autorizada
+
+El usuario autorizó publicar en `origin/main` los siguientes commits locales, con mensajes descriptivos en español y detalle por archivo:
+
+- `e07160d`: sesiones WebSocket, exportaciones seguras y límite de acceso invitado.
+- `4b04981`: navegación de consulta del invitado hasta la sala y estado del nodo.
+- `9b7962e`: recuperación de assets y corrección de instrucciones de despliegue.
+
+Este registro acompaña el mismo lote de publicación. Los archivos sin seguimiento preexistentes del área de trabajo no se incluyen. El destino es el repositorio `k3vin-cc/Monitoreo-de-calidad-de-aire-interior-en-recintos-universitarios`, rama `main`.
