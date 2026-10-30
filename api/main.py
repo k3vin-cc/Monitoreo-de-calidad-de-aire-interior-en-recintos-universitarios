@@ -1480,7 +1480,7 @@ def update_profile(body: dict[str, Any], user=Depends(current_user)):
 
 
 @app.get("/sectores")
-def sectores(user=Depends(current_user)):
+def sectores(incluirConteosHistorial: bool = True, user=Depends(current_user)):
     if user["rol"] in ("ADMIN", "GUEST"):
         rows = fetch_all('''SELECT se.id,se.nombre,se.descripcion,
             (SELECT COUNT(*) FROM edificios ed WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL) AS "edificiosActivos",
@@ -1488,15 +1488,16 @@ def sectores(user=Depends(current_user)):
                 WHERE ed."sectorId"=se.id AND ed."retiradoEn" IS NULL AND p."retiradoEn" IS NULL) AS "pisosActivos",
             (SELECT COUNT(*) FROM salas r JOIN pisos p ON p.id=r."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
                 WHERE ed."sectorId"=se.id AND r."retiradoEn" IS NULL) AS "salasActivas",
-            (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" JOIN pisos p ON p.id=r."pisoId"
-                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) AS "telemetriaTotal",
-            (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" JOIN pisos p ON p.id=r."pisoId"
-                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) AS "telemetriaInciertaTotal",
-            (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" JOIN pisos p ON p.id=r."pisoId"
-                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) AS "alertasTotal",
+            CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" JOIN pisos p ON p.id=r."pisoId"
+                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) ELSE NULL::bigint END AS "telemetriaTotal",
+            CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" JOIN pisos p ON p.id=r."pisoId"
+                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) ELSE NULL::bigint END AS "telemetriaInciertaTotal",
+            CASE WHEN %s THEN (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" JOIN pisos p ON p.id=r."pisoId"
+                JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id) ELSE NULL::bigint END AS "alertasTotal",
             (SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" JOIN pisos p ON p.id=r."pisoId"
                 JOIN edificios ed ON ed.id=p."edificioId" WHERE ed."sectorId"=se.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
-            FROM sectores se WHERE se."retiradoEn" IS NULL ORDER BY se.nombre''')
+            FROM sectores se WHERE se."retiradoEn" IS NULL ORDER BY se.nombre''',
+            (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial))
         return without_guest_history(rows, user)
     suffix, params = scoped_sql("ed", user)
     return fetch_all('''SELECT DISTINCT se.id,se.nombre,se.descripcion FROM sectores se
@@ -1560,18 +1561,19 @@ def delete_sector(sectorId: str, body: dict[str, bool] = Body(default={}), user=
 
 
 @app.get("/edificios")
-def edificios(sectorId: str | None = None, user=Depends(current_user)):
+def edificios(sectorId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
     suffix, params = scoped_sql("ed", user)
     where = ' WHERE ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL AND (%s::text IS NULL OR ed."sectorId"=%s::text)'+suffix
     rows = fetch_all('''SELECT ed.id,ed."sectorId",ed.nombre,ed.direccion,
         (SELECT COUNT(*) FROM pisos p WHERE p."edificioId"=ed.id AND p."retiradoEn" IS NULL) AS "pisosActivos",
         (SELECT COUNT(*) FROM salas r JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id AND r."retiradoEn" IS NULL) AS "salasActivas",
-        (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) AS "telemetriaTotal",
-        (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) AS "telemetriaInciertaTotal",
-        (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) AS "alertasTotal"
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) ELSE NULL::bigint END AS "telemetriaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) ELSE NULL::bigint END AS "telemetriaInciertaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" JOIN pisos p ON p.id=r."pisoId" WHERE p."edificioId"=ed.id) ELSE NULL::bigint END AS "alertasTotal"
         ,(SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" JOIN pisos p ON p.id=r."pisoId"
             WHERE p."edificioId"=ed.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
-        FROM edificios ed JOIN sectores se ON se.id=ed."sectorId"'''+where+' ORDER BY ed.nombre', (sectorId, sectorId, *params))
+        FROM edificios ed JOIN sectores se ON se.id=ed."sectorId"'''+where+' ORDER BY ed.nombre',
+        (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, sectorId, sectorId, *params))
     return without_guest_history(rows, user)
 
 
@@ -1614,17 +1616,18 @@ def delete_building(edificioId: str, body: dict[str, bool] = Body(default={}), u
 
 
 @app.get("/pisos")
-def pisos(edificioId: str | None = None, user=Depends(current_user)):
+def pisos(edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT p.id,p."edificioId",p.nombre,p.nivel,
         (SELECT COUNT(*) FROM salas r WHERE r."pisoId"=p.id AND r."retiradoEn" IS NULL) AS "salasActivas",
-        (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" WHERE r."pisoId"=p.id) AS "telemetriaTotal",
-        (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" WHERE r."pisoId"=p.id) AS "telemetriaInciertaTotal",
-        (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" WHERE r."pisoId"=p.id) AS "alertasTotal"
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria t JOIN salas r ON r.id=t."salaId" WHERE r."pisoId"=p.id) ELSE NULL::bigint END AS "telemetriaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti JOIN salas r ON r.id=ti."salaId" WHERE r."pisoId"=p.id) ELSE NULL::bigint END AS "telemetriaInciertaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM alertas a JOIN salas r ON r.id=a."salaId" WHERE r."pisoId"=p.id) ELSE NULL::bigint END AS "alertasTotal"
         ,(SELECT COUNT(*) FROM nodos n JOIN salas r ON r.id=n."salaId" WHERE r."pisoId"=p.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
         FROM pisos p JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores se ON se.id=ed."sectorId"
         WHERE p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND se."retiradoEn" IS NULL
-        AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY p."edificioId",p.nivel', (edificioId, edificioId, *params))
+        AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY p."edificioId",p.nivel',
+        (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, edificioId, edificioId, *params))
     return without_guest_history(rows, user)
 
 
@@ -1663,18 +1666,19 @@ def delete_floor(pisoId: str, body: dict[str, bool] = Body(default={}), user=Dep
 
 
 @app.get("/salas")
-def salas(pisoId: str | None = None, edificioId: str | None = None, user=Depends(current_user)):
+def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(current_user)):
     suffix, params = scoped_sql("p", user)
     rows = fetch_all('''SELECT s.id,s."pisoId",p."edificioId",ed."sectorId",s.nombre,s."capacidadOcupantes",
         sec.nombre AS "sectorNombre",ed.nombre AS "edificioNombre",p.nombre AS "pisoNombre",
-        (SELECT COUNT(*) FROM telemetria t WHERE t."salaId"=s.id) AS "telemetriaTotal",
-        (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti WHERE ti."salaId"=s.id) AS "telemetriaInciertaTotal",
-        (SELECT COUNT(*) FROM alertas a WHERE a."salaId"=s.id) AS "alertasTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria t WHERE t."salaId"=s.id) ELSE NULL::bigint END AS "telemetriaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM telemetria_tiempo_incierto ti WHERE ti."salaId"=s.id) ELSE NULL::bigint END AS "telemetriaInciertaTotal",
+        CASE WHEN %s THEN (SELECT COUNT(*) FROM alertas a WHERE a."salaId"=s.id) ELSE NULL::bigint END AS "alertasTotal",
         (SELECT COUNT(*) FROM nodos n WHERE n."salaId"=s.id AND n."retiradoEn" IS NULL) AS "nodosActivos"
         FROM salas s JOIN pisos p ON p.id=s."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
         JOIN sectores sec ON sec.id=ed."sectorId"
         WHERE s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL AND ed."retiradoEn" IS NULL AND sec."retiradoEn" IS NULL
-        AND (%s::text IS NULL OR s."pisoId"=%s::text) AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY s.nombre', (pisoId,pisoId,edificioId,edificioId,*params))
+        AND (%s::text IS NULL OR s."pisoId"=%s::text) AND (%s::text IS NULL OR p."edificioId"=%s::text)'''+suffix+' ORDER BY s.nombre',
+        (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial, pisoId,pisoId,edificioId,edificioId,*params))
     return without_guest_history(rows, user)
 
 
@@ -1770,13 +1774,14 @@ def alerts(salaId: str | None = None, estado: Literal["activa", "resuelta"] | No
 
 
 @app.get("/nodos")
-def nodes(user=Depends(allow_roles("ADMIN"))):
+def nodes(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN"))):
     return fetch_all('''SELECT n.id,n.nombre,n."salaId",n."macAddress",n.estado,n.firmware,n."firmwareId",n."wifiSsid",
         n."ultimaTelemetria",n."ultimoFlasheoEn",n."createdAt",n."updatedAt",
         r.nombre AS "salaNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre",
         (n."salaId" IS NULL AND ultima."salaId" IS NOT NULL) AS "salaContextoHistorico",
-        COALESCE(t.total,0) AS "telemetriaTotal",COALESCE(ti.total,0) AS "telemetriaInciertaTotal",
-        COALESCE(a.total,0) AS "alertasTotal"
+        CASE WHEN %s THEN COALESCE(t.total,0) ELSE NULL::bigint END AS "telemetriaTotal",
+        CASE WHEN %s THEN COALESCE(ti.total,0) ELSE NULL::bigint END AS "telemetriaInciertaTotal",
+        CASE WHEN %s THEN COALESCE(a.total,0) ELSE NULL::bigint END AS "alertasTotal"
         FROM nodos n LEFT JOIN LATERAL (
             SELECT contexto."salaId" FROM (
                 SELECT "salaId","timestamp" AS fecha FROM telemetria WHERE "nodoId"=n.id
@@ -1786,10 +1791,31 @@ def nodes(user=Depends(allow_roles("ADMIN"))):
         ) ultima ON TRUE
         LEFT JOIN salas r ON r.id=COALESCE(n."salaId",ultima."salaId") LEFT JOIN pisos p ON p.id=r."pisoId"
         LEFT JOIN edificios ed ON ed.id=p."edificioId" LEFT JOIN sectores sec ON sec.id=ed."sectorId"
-        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM telemetria WHERE "nodoId"=n.id) t ON TRUE
-        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM telemetria_tiempo_incierto WHERE "nodoId"=n.id) ti ON TRUE
-        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM alertas WHERE "nodoId"=n.id) a ON TRUE
-        WHERE n."retiradoEn" IS NULL ORDER BY n.id''')
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM telemetria WHERE %s AND "nodoId"=n.id) t ON TRUE
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM telemetria_tiempo_incierto WHERE %s AND "nodoId"=n.id) ti ON TRUE
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM alertas WHERE %s AND "nodoId"=n.id) a ON TRUE
+        WHERE n."retiradoEn" IS NULL ORDER BY n.id''',
+        (incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial,
+         incluirConteosHistorial, incluirConteosHistorial, incluirConteosHistorial))
+
+
+@app.get("/nodos/{nodoId}/resumen-retiro")
+def node_retirement_summary(nodoId: str, user=Depends(allow_roles("ADMIN"))):
+    """
+    Nombre   : node_retirement_summary
+    Razón    : Consulta conteos históricos sólo al abrir la confirmación de retiro.
+    Entradas : nodoId - identificador técnico recibido desde la ruta.
+    Salida   : conteos de telemetría, telemetría incierta y alertas.
+    Efectos  : Ninguno. La operación solamente consulta información.
+    """
+    row = fetch_one('''SELECT
+        (SELECT COUNT(*) FROM telemetria WHERE "nodoId"=%s) AS telemetria,
+        (SELECT COUNT(*) FROM telemetria_tiempo_incierto WHERE "nodoId"=%s) AS "telemetriaIncierta",
+        (SELECT COUNT(*) FROM alertas WHERE "nodoId"=%s) AS alertas
+        FROM nodos WHERE id=%s AND "retiradoEn" IS NULL''', (nodoId, nodoId, nodoId, nodoId))
+    if not row:
+        raise HTTPException(404, "Nodo no encontrado o retirado")
+    return row
 
 
 @app.get("/nodos/{nodoId}")
