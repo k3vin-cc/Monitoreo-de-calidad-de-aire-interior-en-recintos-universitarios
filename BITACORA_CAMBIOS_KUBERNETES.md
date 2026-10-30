@@ -78,3 +78,36 @@ Este cambio está preparado para un commit local descriptivo junto con esta bit�
 ## Registro de cambios futuros
 
 Para cada modificación posterior se añadirá una entrada con fecha, motivo, archivos y funciones afectados, impacto/compatibilidad, validaciones, despliegue y pasos de diagnóstico o recuperación pertinentes. También se anotará el identificador del commit local y si el cambio fue publicado en GitHub.
+
+## 2026-10-30 — Navegación de consulta para invitado
+
+### Motivo
+
+El invitado podía cargar el resumen del campus, pero la tarjeta de sector no era un enlace, las rutas de sector/edificio/piso/sala lo redirigían al inicio y la API rechazaba varias lecturas necesarias para navegar.
+
+### Archivos y cambios
+
+- `web/src/ui.jsx`
+  - La tarjeta de sector ahora enlaza con la vista del sector.
+  - Las rutas de sector, edificio, piso y sala admiten `GUEST`; las demás rutas conservan sus roles actuales.
+- `api/main.py`
+  - Se habilita `GUEST` en lectura de sectores, edificios, pisos, salas, estado actual de sala y complementos de estado. Las operaciones de escritura siguen bajo `ADMIN`.
+  - La comprobación de acceso a una sala continúa usando `ensure_room_access`; el invitado ve los datos de estado actuales, no historial.
+  - `/nodos` permanece sólo para `ADMIN`: esa vista incluye MAC, SSID Wi-Fi, firmware y datos de operación. El identificador y conectividad del nodo se muestran dentro de la sala.
+
+### Alcance y validación
+
+El recorrido esperado es inicio → sector → edificio → piso → sala. No se habilitan para el invitado la administración independiente de nodos, historial, alertas, usuarios, espacios administrativos, perfil ni Telegram.
+
+### Verificaciones realizadas
+
+- `python -m py_compile api/main.py`: correcto.
+- `npm run build` en `web/`: correcto con Vite 5.4.21.
+- Sesión GUEST sintética contra el API desplegado: `/campus`, `/sectores`, `/edificios`, `/pisos` y `/salas` respondieron 200 y devolvieron datos. La consulta de estado de una sala respondió 200 e incluyó el identificador de nodo.
+- La ruta administrativa `GET /nodos` respondió 403 para GUEST.
+- Se regeneraron los ConfigMaps de API y web; los Deployments `calidad-api` y `calidad-web` completaron el rollout. Los Pods quedaron `Running` y el proxy `/api/healthz` respondió `{"status":"ok"}`.
+- La validación directa usando el dominio HTTPS no pudo completarse porque el cliente reportó `PartialChain` en el certificado TLS. La validación funcional se realizó por el servicio interno del clúster sin desactivar la verificación TLS.
+
+### Nota de despliegue
+
+`kubectl apply` no pudo actualizar `calidad-web-main-js` porque el manifiesto generado supera el límite de tamaño de la anotación `last-applied-configuration`. Se actualizó ese ConfigMap con `kubectl replace -f k8s/05-web-main-js.yaml` y luego se reinició y verificó el Deployment web. Los otros ConfigMaps se aplicaron normalmente.
