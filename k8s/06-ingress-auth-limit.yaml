@@ -23,3 +23,10 @@ spec:
                 name: calidad-web
                 port:
                   number: 8080
+          - path: /api/auth/invitado
+            pathType: Exact
+            backend:
+              service:
+                name: calidad-web
+                port:
+                  number: 8080

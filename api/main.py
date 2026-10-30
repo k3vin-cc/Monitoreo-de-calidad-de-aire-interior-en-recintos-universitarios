@@ -27,6 +27,7 @@ import jwt
 import paho.mqtt.client as mqtt
 import psycopg
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -258,24 +259,48 @@ class Hub:
         async with self.lock:
             peers = list(self.connections.items())
         room_id = event.get("salaId")
-        active_sessions = set()
-        if room_id and peers:
-            session_ids = [session_id for _, (session_id, _) in peers if session_id is not None]
+        event_type = event.get("tipo")
+        if not room_id or event_type not in ("ventana", "alerta"):
+            return
+        session_ids = [session_id for _, (session_id, _) in peers if session_id is not None]
+        active_sessions = {}
+        if session_ids:
             rows = fetch_all('''SELECT s.id AS "sessionId",u.rol,u."assignedEdificios",ed.id AS "edificioId"
                 FROM sesiones_usuario s JOIN usuarios u ON u.id=s."usuarioId"
                 JOIN salas r ON r.id=%s JOIN pisos p ON p.id=r."pisoId"
                 JOIN edificios ed ON ed.id=p."edificioId"
-                WHERE s.id=ANY(%s) AND s.revocada=FALSE AND s."expiraEn">NOW() AND u.estado='activo'
-                AND (u.rol='ADMIN' OR u.rol='GUEST' OR ed.id=ANY(u."assignedEdificios"))''', (room_id, session_ids)) if session_ids else []
-            active_sessions = {row["sessionId"] for row in rows}
+                WHERE s.id=ANY(%s) AND s.revocada=FALSE AND s."expiraEn">NOW()
+                AND s."ultimaActividadEn">NOW()-(%s * INTERVAL '1 minute') AND u.estado='activo' ''',
+                (room_id, session_ids, SESSION_IDLE_MINUTES))
+            active_sessions = {row["sessionId"]: row for row in rows}
+        now = datetime.now(timezone.utc)
         for ws, (session_id, expires_at) in peers:
-            valid_guest = session_id is None and expires_at is not None and expires_at > datetime.now(timezone.utc)
-            if not valid_guest and session_id not in active_sessions:
+            if expires_at is None or expires_at <= now:
                 await self.disconnect(ws)
                 try:
                     await ws.close(code=4401)
                 except Exception:
                     pass
+                continue
+            if session_id is None:
+                if event_type == "ventana":
+                    try:
+                        await ws.send_json(event)
+                    except Exception:
+                        await self.disconnect(ws)
+                continue
+            user = active_sessions.get(session_id)
+            if not user:
+                await self.disconnect(ws)
+                try:
+                    await ws.close(code=4401)
+                except Exception:
+                    pass
+                continue
+            allowed_buildings = user["assignedEdificios"] or []
+            room_allowed = user["rol"] == "ADMIN" or user["edificioId"] in allowed_buildings
+            event_allowed = event_type == "ventana" or user["rol"] in ("ADMIN", "ANALISTA")
+            if not room_allowed or not event_allowed:
                 continue
             try:
                 await ws.send_json(event)
@@ -950,7 +975,9 @@ async def telegram_handle_update(update: dict[str, Any]):
             if rows:
                 writer=csv.DictWriter(out,fieldnames=list(rows[0].keys()))
                 writer.writeheader()
-                writer.writerows([{k:json.dumps(v,default=str) if isinstance(v,(dict,list)) else v for k,v in row.items()} for row in rows])
+                for row in rows:
+                    values = {key: json.dumps(value, default=str, ensure_ascii=False) if isinstance(value, (dict, list)) else value for key, value in row.items()}
+                    writer.writerow({key: csv_safe_text(value) if isinstance(value, str) else value for key, value in values.items()})
             content=out.getvalue().encode()
             content_type="text/csv"
         telegram_api("sendDocument", {"chat_id":chat_id,"caption":f"Telemetría {room_id} ({fmt.upper()})"}, (f"telemetria-{room_id}.{fmt}",content,content_type))
@@ -1234,6 +1261,7 @@ def session_from_token(token: str):
     if not row:
         raise HTTPException(401, "Sesión revocada o cuenta inactiva")
     execute('UPDATE sesiones_usuario SET "ultimaActividadEn"=NOW() WHERE id=%s', (row["sessionId"],))
+    row["tokenExpiresAt"] = datetime.fromtimestamp(payload["exp"], timezone.utc)
     return row
 
 
@@ -1833,20 +1861,72 @@ def room_telemetry(salaId: str, desde: datetime | None = None, hasta: datetime |
         AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp" DESC LIMIT %s''', (salaId,desde,desde,hasta,hasta,limite))
 
 
+def csv_safe_text(value: str) -> str:
+    """
+    Nombre   : csv_safe_text
+    Razón    : Evita que texto de telemetría se interprete como fórmula al abrir CSV.
+    Entradas : value - celda textual proveniente de datos almacenados.
+    Salida   : texto original o prefijado para que una hoja de cálculo lo trate como texto.
+    Efectos  : Ninguno; no modifica la telemetría almacenada.
+    """
+    formula = value.lstrip(" \t\r\n\v\f")
+    if value.startswith(("\t", "\r", "\n")) or formula.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
+def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta: datetime | None):
+    """
+    Nombre   : stream_room_export
+    Razón    : Transmite las filas de una exportación sin mantener todo el historial en memoria.
+    Entradas : sala_id, formato y filtros de fecha validados por export_room.
+    Salida   : bloques CSV protegidos o un arreglo JSON válido.
+    Efectos  : Mantiene una consulta de solo lectura abierta durante la transmisión.
+    """
+    sql = '''SELECT * FROM telemetria WHERE "salaId"=%s AND (%s::timestamptz IS NULL OR "timestamp">=%s::timestamptz)
+        AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp"'''
+    params = (sala_id, desde, desde, hasta, hasta)
+    with db() as conn, conn.cursor(name="exportacion_sala") as cur:
+        cur.itersize = 100
+        cur.execute(sql, params)
+        if formato == "json":
+            yield b"["
+            first = True
+            for row in cur:
+                if not first:
+                    yield ",".encode("utf-8")
+                yield json.dumps(jsonable_encoder(row), ensure_ascii=False).encode("utf-8")
+                first = False
+            yield b"]"
+            return
+        output = io.StringIO(newline="")
+        writer = None
+        for row in cur:
+            if writer is None:
+                writer = csv.DictWriter(output, fieldnames=list(row.keys()))
+                writer.writeheader()
+                yield output.getvalue().encode("utf-8")
+                output.seek(0)
+                output.truncate(0)
+            values = {}
+            for key, value in row.items():
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, default=str, ensure_ascii=False)
+                if isinstance(value, str):
+                    value = csv_safe_text(value)
+                values[key] = value
+            writer.writerow(values)
+            yield output.getvalue().encode("utf-8")
+            output.seek(0)
+            output.truncate(0)
+
+
 @app.get("/salas/{salaId}/exportacion")
 def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: datetime | None = None, hasta: datetime | None = None, user=Depends(allow_roles("ADMIN", "ANALISTA"))):
     ensure_room_access(user, salaId)
-    rows = fetch_all('''SELECT * FROM telemetria WHERE "salaId"=%s AND (%s::timestamptz IS NULL OR "timestamp">=%s::timestamptz)
-        AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp"''', (salaId,desde,desde,hasta,hasta))
     if formato == "json":
-        return rows
-    out = io.StringIO()
-    if rows:
-        writer = csv.DictWriter(out, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: json.dumps(v, default=str) if isinstance(v, (dict,list)) else v for k,v in row.items()})
-    return StreamingResponse(iter([out.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="telemetria-{salaId}.csv"'})
+        return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="application/json")
+    return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="telemetria-{salaId}.csv"'})
 
 
 @app.get("/alertas")
