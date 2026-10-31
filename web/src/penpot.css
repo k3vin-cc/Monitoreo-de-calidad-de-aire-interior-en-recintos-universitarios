@@ -105,6 +105,19 @@
 @media (max-width: 760px) { .usersFilters { flex-direction: column; }.usersFilters label, .usersFilters select { width: 100%; }.usersSummary { grid-template-columns: 1fr; }.userDialog { padding: 18px; } }
 
 /* Navegación por dispositivos, firmware y USB. */
+.historyPage { display:grid; gap:18px; }
+.historyPage .pageHeading { margin-bottom:0; }
+.historyPage .historyFilters { display:grid; grid-template-columns:1fr 2fr; gap:14px; }
+.historyPage .historyDates { display:grid; grid-template-columns:1fr 1fr auto; align-items:end; gap:14px; }
+.historyPage label { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#506b7b; font-weight:700; min-width:0; }
+.historyPage input,.historyPage select { width:100%; min-width:0; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; }
+.historyPage .historyPeriods { margin:14px 0; flex-wrap:wrap; }
+.historyPage button { width:auto; }
+.historyPage .historyApplied p { margin:8px 0; }
+.historyPage .historyApplied small { display:block; margin-top:10px; color:#5f7889; }
+.historyPage .historyPages { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:13px; }
+.chartTabs { flex-wrap:wrap; }
+@media(max-width:760px) { .historyPage .historyFilters,.historyPage .historyDates { grid-template-columns:1fr; } }
 .telegramPage .telegramGrid { display:grid; grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; margin-top:18px; }
 .telegramPage .panel { min-width:0; }
 .telegramPage .panel h2 { font-size:18px; margin-bottom:14px; }
