@@ -83,3 +83,19 @@ La versión inmediatamente anterior a esta segunda etapa quedó etiquetada `resp
 El reemplazo simulado de los tres ConfigMaps fue aceptado por Kubernetes. La nueva web compiló, su rollout terminó, los 45 archivos publicados coincidieron por SHA-256 y `/api/healthz` respondió `ok`. No se hicieron escrituras de espacios ni revisión visual por parte del asistente.
 
 La paginación actual limita filas renderizadas, pero `GET /espacios/resumen` todavía entrega la estructura completa. Si el volumen futuro hace lenta la respuesta de API, se deberá medir tamaño y tiempo y planificar paginación del servidor por separado. La página administrativa de nodos es otro módulo; aquí sólo se muestra su conteo por sala.
+
+## Tercera etapa: explorador visual combinado
+
+Por solicitud del usuario se sustituyeron las pestañas y tablas de Espacios por un recorrido de sector → edificio → piso → sala → nodos. Sectores y edificios se presentan como tarjetas con conteos; pisos, salas y nodos usan filas compactas. La ruta jerárquica permite volver a cada nivel. Una búsqueda local filtra el nivel visible y la opción «Buscar en toda la estructura» muestra resultados con su ruta y permite abrirlos directamente. Ambos listados muestran hasta 20 resultados por página.
+
+El botón Agregar usa el nivel visible y preselecciona la ubicación superior. Se conservaron los diálogos existentes para editar y retirar, incluidos sus controles de errores, bloqueo de operaciones duplicadas y confirmación adicional para borrar historial. En la sala se muestran nombre, ID y estado de los nodos asociados; la edición de dispositivos sigue en `/nodos/administrar`. `GET /nodos` se consulta sólo al entrar a una sala o iniciar una búsqueda general; el endpoint actual devuelve todos los nodos activos, por lo que un crecimiento grande requeriría medir respuesta y evaluar un filtro por sala en un cambio separado. No se añadieron dependencias ni se alteraron API, SQL, datos, rutas o permisos.
+
+Antes de editar se etiquetó `dddca8a` como `respaldo/espacios-tarjetas-20261030`. Los tres ConfigMaps web publicados y el Deployment se respaldaron en `C:\Users\corte\.codex\backups\aira-espacios-tarjetas-20261030-antes`, junto con hashes y `Restaurar.ps1`. El reemplazo simulado de los ConfigMaps fue aceptado por Kubernetes. Para recuperar exactamente esa versión:
+
+```powershell
+& 'C:\Users\corte\.codex\backups\aira-espacios-tarjetas-20261030-antes\Restaurar.ps1'
+```
+
+Tras ejecutar el script, comprobar el rollout, la salud API y los hashes publicados. Crear un commit que revierta únicamente esta tercera etapa en Git, sin `reset` destructivo. La restauración de la web no revierte escrituras realizadas después sobre espacios o nodos.
+
+El build Vite terminó correctamente, los tres ConfigMaps se reemplazaron como unidad y el rollout web concluyó. Los 45 archivos servidos coincidieron con `web/dist` por SHA-256 y `/api/healthz` respondió `ok`. No se realizaron mutaciones de datos ni revisión visual; la validación visual corresponde al usuario.

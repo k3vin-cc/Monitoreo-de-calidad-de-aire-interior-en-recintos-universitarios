@@ -173,3 +173,12 @@ Base Git `c482077`, etiqueta `respaldo/espacios-20261030`; ConfigMaps y Deployme
 - `PLAN_MEJORAS_ESPACIOS.md`: registra esta etapa, límite de rendimiento y reversión de la versión visual inmediatamente anterior.
 
 La versión previa `133d8e3` quedó etiquetada `respaldo/espacios-volumen-20261030`; su despliegue está respaldado fuera de Git en `C:\Users\corte\.codex\backups\aira-espacios-volumen-20261030-antes`. Tres ConfigMaps web reemplazados conjuntamente y rollout completado. Build correcto, 45 assets idénticos por SHA-256, salud API `ok`. Sin cambios de API, esquema, permisos o datos; revisión visual del usuario pendiente.
+
+## 2026-10-30 — Explorador visual combinado de Espacios
+
+- `web/src/LocationsAdmin.jsx`: reemplaza las pestañas y tablas por tarjetas para sectores/edificios y listas compactas para pisos/salas/nodos. Añade ruta jerárquica, búsqueda por nivel o en toda la estructura, apertura directa de resultados, páginas de 20, carga diferida de nodos y preselección de la ubicación superior al crear. Conserva los diálogos de edición y retiro. Se modificó `LocationsAdmin`; se agregaron `loadNodes`, `enter`, `openResult` y la reconciliación de selección al recargar.
+- `web/src/penpot.css`: define tarjetas, listas, ruta, búsqueda y adaptación móvil sólo para `.locationsAdmin`.
+- `PLAN_MEJORAS_ESPACIOS.md`: documenta el diseño elegido, la limitación del endpoint de nodos, verificación y reversión.
+- `k8s/05-web-core.yaml`, `k8s/05-web-assets.yaml`, `k8s/05-web-main-js.yaml`: se regeneraron juntos desde el mismo build de Vite para publicar CSS y JavaScript coherentes; son artefactos ignorados por Git.
+
+La versión previa `dddca8a` quedó etiquetada `respaldo/espacios-tarjetas-20261030`; ConfigMaps, Deployment, hashes y script de recuperación están en `C:\Users\corte\.codex\backups\aira-espacios-tarjetas-20261030-antes`. Dry run de reemplazo aceptado. Build correcto, rollout completo, 45 archivos servidos idénticos por SHA-256 y `/api/healthz` respondió `ok`. Sin cambios de API, permisos, esquema ni datos. La consulta `/nodos` sigue devolviendo la lista completa cuando se abre una sala o se busca globalmente; se medirá si el volumen futuro afecta su respuesta. Revisión visual del usuario pendiente; sin push automático.
