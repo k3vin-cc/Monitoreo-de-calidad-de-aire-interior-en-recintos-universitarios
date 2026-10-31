@@ -198,6 +198,8 @@ Se revisaron `NodesPage`, `NodeRoomSelect`, `NodeInventory`, estilos, servicios 
 
 ## 2026-10-30 — Mejoras de Nodos desplegadas
 
+Corrección posterior a la captura del usuario: `web/src/penpot.css` elimina el scroll del contenedor de nodos y hace que las opciones de sala amplíen la fila en flujo normal. La tabla usa ancho fijo y permite partir texto para ajustarse al panel. La causa era `overflow:auto` junto con el desplegable absoluto de `compactCascade`. Build y rollout correctos, 45 archivos publicados idénticos por SHA-256 y API `ok`; revisión visual pendiente del usuario. Se puede revertir este ajuste mediante su commit aislado. No hay cambios de datos ni API.
+
 - `web/src/ui.jsx`: `NodesPage` comparte ubicaciones y monta sólo la pestaña activa; añade filtros/páginas, detalles técnicos, fechas del catálogo y publicación desplegable. `NodeRoomSelect` usa datos compartidos, bloquea duplicados y muestra errores. USB carga el catálogo y conserva visible su operación mediante bloqueo de pestañas.
 - `web/src/NodeInventory.jsx`: `reload` pasa de cinco consultas a dos, conserva filas al refrescar; `save` y `remove` controlan duplicados y errores locales. Añade confirmación por ID para borrar historial y `NodeDialog` con foco y Escape controlados.
 - `web/src/NodeListControls.jsx`: controles compartidos de búsqueda, estado, sala y paginación; prueba de `filterNodes` con dos salas distintas y un dispositivo sin asignar correcta.

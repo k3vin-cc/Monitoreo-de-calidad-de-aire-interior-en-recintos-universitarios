@@ -110,6 +110,11 @@
 .nodeFilters input,.nodeFilters select { min-height:44px; min-width:0; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; color:#24465b; }
 .nodePages { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:12px 0; color:#506b7b; font-size:13px; }
 .nodeAssignment { border:0; margin:0; padding:0; min-width:180px; }
+/* El selector debe ampliar la fila en lugar de quedar recortado por el scroll de la tabla. */
+.nodeTab-nodes .tableScroll,.nodeInventory .tableScroll { overflow:visible; height:auto; max-height:none; }
+.nodeAssignment .cascadeField.compactCascade .cascadeOptionsPanel { position:relative; top:auto; right:auto; width:100%; box-shadow:none; }
+.nodeTab-nodes table,.nodeInventory table { table-layout:fixed; width:100%; }
+.nodeTab-nodes table td,.nodeInventory table td { overflow-wrap:anywhere; }
 .nodeModal { border:1px solid #d8e3ec; margin:auto; color:#24465b; }
 .nodeModal::backdrop { background:rgba(15,43,58,.5); }
 .nodeModal .stack label { font-size:14px; }
