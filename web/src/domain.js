@@ -22,3 +22,12 @@ export function formatDate(value, options={}) {
 export function number(value, digits=1) { return value == null ? '—' : new Intl.NumberFormat('es-CL',{maximumFractionDigits:digits}).format(value); }
 export const canAnalyze = user => ['ADMIN','ANALISTA'].includes(user?.rol);
 export const canAdmin = user => user?.rol === 'ADMIN';
+/** Nombre: nodePresence. Razón: evita confundir el último estado guardado con señal reciente.
+ * Entradas: fecha de última telemetría verificable y hora actual en milisegundos.
+ * Salida: reciente, sin_senal o sin_datos. Efectos: ninguno. */
+export function nodePresence(lastTelemetry, now=Date.now()) {
+  if (!lastTelemetry) return 'sin_datos';
+  const timestamp=Date.parse(lastTelemetry);
+  if (!Number.isFinite(timestamp) || timestamp>now+120000) return 'sin_datos';
+  return now-timestamp<12*60000 ? 'reciente' : 'sin_senal';
+}
