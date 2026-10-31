@@ -125,6 +125,26 @@
 .locationsAdmin .locationModal .locationConfirmName { display: flex; flex-direction: column; gap: 7px; font-weight: 700; }
 .locationsAdmin .locationModal .locationConfirmName input { border: 1px solid #b5c8d5; border-radius: 8px; padding: 9px 11px; }
 .locationsAdmin .locationModal .dialogActions button { min-height: 44px; }
+.locationsAdmin .locationFilters { display: grid; grid-template-columns: minmax(220px,2fr) repeat(3,minmax(155px,1fr)); gap: 12px; align-items: end; margin: 18px 0; }
+.locationsAdmin .locationFilters label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; font-weight: 700; color: #506b7b; }
+.locationsAdmin .locationFilters input,.locationsAdmin .locationFilters select { width: 100%; min-width: 0; height: 44px; padding: 0 11px; border: 1px solid #b5c8d5; border-radius: 8px; background: #fff; color: #24465b; font-size: 14px; }
+.locationsAdmin .locationFilters button { min-height: 44px; }
+.locationsAdmin .locationPages { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 18px 0 2px; color: #506b7b; font-size: 13px; }
+.locationsAdmin .locationPages button { min-height: 42px; }
+@media (max-width:1050px) { .locationsAdmin .locationFilters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width:760px) {
+  .locationsAdmin .locationFilters { grid-template-columns: 1fr; }
+  .locationsAdmin .crudPanel table,.locationsAdmin .crudPanel tbody,.locationsAdmin .crudPanel tr { display: block; min-width: 0; width: 100%; }
+  .locationsAdmin .crudPanel thead { display: none; }
+  .locationsAdmin .crudPanel tbody { display: grid; gap: 12px; }
+  .locationsAdmin .crudPanel tr { border: 1px solid #d8e3ec; border-radius: 11px; padding: 10px 14px; background: #fff; }
+  .locationsAdmin .crudPanel table td { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 9px 0; border: 0; overflow-wrap: anywhere; text-align: right; }
+  .locationsAdmin .crudPanel table td::before { content: attr(data-label); flex-shrink: 0; color: #506b7b; font-weight: 700; text-align: left; }
+  .locationsAdmin .crudPanel table td:first-child { display: block; min-width: 0; border-bottom: 1px solid #e5edf2; text-align: left; }
+  .locationsAdmin .crudPanel table td:first-child::before { display: none; }
+  .locationsAdmin .crudPanel .rowActions { justify-content: flex-end; }
+  .locationsAdmin .locationPages { gap: 8px; }
+}
 @media (max-width:760px) { .locationsAdmin .locationModal { width: min(100%,calc(100% - 24px)); padding: 18px; } .locationsAdmin .locationModal .formGrid { grid-template-columns: 1fr; } .locationsAdmin .locationModal .dialogActions { flex-wrap: wrap; } }
 @media (max-width: 760px) { .nodeStats, .nodeTab-firmware { grid-template-columns: 1fr; }.nodeTabs { gap: 9px; }.nodeTabs button { font-size: 11px; } }
 @media (max-width: 760px) { .alertStats { grid-template-columns: 1fr; } }

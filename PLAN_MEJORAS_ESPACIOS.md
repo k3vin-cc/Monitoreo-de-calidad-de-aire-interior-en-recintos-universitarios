@@ -69,3 +69,17 @@ Para restaurar exactamente la web anterior:
 El script comprueba contexto y hashes, reemplaza juntos los tres ConfigMaps y reinicia web sólo después de completar los reemplazos. Después se comprobarán rollout, salud y hashes de los archivos publicados. Para revertir código se creará un commit que deshaga sólo Espacios.
 
 Build Vite correcto; los tres ConfigMaps nuevos se reemplazaron y el rollout de `calidad-web` terminó. Los 45 archivos publicados coincidieron con `web/dist` por SHA-256 y `/api/healthz` respondió `ok`. No hubo operaciones sobre espacios reales ni medición de rendimiento; la revisión visual queda a cargo del usuario. Restaurar la interfaz no recupera datos históricos eliminados después.
+
+## Segunda etapa visual para muchos espacios
+
+Tras la observación del usuario sobre el crecimiento futuro, se añadieron filtros de sector, edificio y piso según la pestaña, búsqueda por nombre/ID/ruta jerárquica, contador visible y páginas de 20 resultados. Al cambiar de pestaña o filtro se vuelve a la primera página. En móvil las filas se presentan como tarjetas y las salas indican cuántos nodos activos tienen. Estos cambios son de `web/src/LocationsAdmin.jsx` y CSS limitado a Espacios en `web/src/penpot.css`.
+
+La versión inmediatamente anterior a esta segunda etapa quedó etiquetada `respaldo/espacios-volumen-20261030` sobre `133d8e3`. Los tres ConfigMaps web y el Deployment de esa versión están en `C:\Users\corte\.codex\backups\aira-espacios-volumen-20261030-antes`, con hashes y `Restaurar.ps1`. Para volver sólo a esa versión visual:
+
+```powershell
+& 'C:\Users\corte\.codex\backups\aira-espacios-volumen-20261030-antes\Restaurar.ps1'
+```
+
+El reemplazo simulado de los tres ConfigMaps fue aceptado por Kubernetes. La nueva web compiló, su rollout terminó, los 45 archivos publicados coincidieron por SHA-256 y `/api/healthz` respondió `ok`. No se hicieron escrituras de espacios ni revisión visual por parte del asistente.
+
+La paginación actual limita filas renderizadas, pero `GET /espacios/resumen` todavía entrega la estructura completa. Si el volumen futuro hace lenta la respuesta de API, se deberá medir tamaño y tiempo y planificar paginación del servidor por separado. La página administrativa de nodos es otro módulo; aquí sólo se muestra su conteo por sala.

@@ -165,3 +165,11 @@ Se revisaron `LocationsAdmin`, `CascadeSelect`, estilos, servicios HTTP, esquema
 - `PLAN_MEJORAS_ESPACIOS.md`: implementación, respaldo y restauración concretos.
 
 Base Git `c482077`, etiqueta `respaldo/espacios-20261030`; ConfigMaps y Deployment web anteriores guardados fuera de Git en `C:\Users\corte\.codex\backups\aira-espacios-20261030-antes`. Sintaxis del script `Restaurar.ps1` y reemplazo simulado de los tres ConfigMaps correctos. Build Vite correcto; los tres ConfigMaps actuales se reemplazaron antes de reiniciar web; rollout completo, 45 assets iguales por SHA-256 y salud API `ok`. Sin cambios de base de datos, API, rutas, permisos ni dependencias. No se hicieron mutaciones de espacios ni se midió rendimiento real. Revisión visual del usuario pendiente. Restaurar la web no recupera datos borrados por operaciones posteriores.
+
+## 2026-10-30 — Espacios preparada para más ubicaciones
+
+- `web/src/LocationsAdmin.jsx`: añade filtros jerárquicos de sector, edificio y piso, búsqueda por ruta completa, 20 resultados por página y conteo de nodos activos en salas. Reinicia página y filtros al cambiar de contexto. La paginación limita filas renderizadas; la API sigue enviando el resumen completo.
+- `web/src/penpot.css`: filtros adaptables y tarjetas móviles en la tabla de Espacios.
+- `PLAN_MEJORAS_ESPACIOS.md`: registra esta etapa, límite de rendimiento y reversión de la versión visual inmediatamente anterior.
+
+La versión previa `133d8e3` quedó etiquetada `respaldo/espacios-volumen-20261030`; su despliegue está respaldado fuera de Git en `C:\Users\corte\.codex\backups\aira-espacios-volumen-20261030-antes`. Tres ConfigMaps web reemplazados conjuntamente y rollout completado. Build correcto, 45 assets idénticos por SHA-256, salud API `ok`. Sin cambios de API, esquema, permisos o datos; revisión visual del usuario pendiente.
