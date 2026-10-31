@@ -121,7 +121,19 @@
 .telegramPage .telegramRooms .checkRow { padding:12px; border:1px solid #d8e3ec; border-radius:9px; align-items:flex-start; }
 .telegramPage .telegramRooms small { display:block; margin-top:5px; line-height:1.5; }
 .telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
-.telegramPage button { min-height:42px; }
+.telegramPage button { min-height:34px; width:auto; max-width:100%; padding:7px 12px; font-size:13px; align-self:flex-start; }
+.telegramPage .inlineActions { flex-wrap:wrap; gap:8px; }
+.telegramPage .telegramGrid { grid-template-columns:minmax(240px,.65fr) minmax(0,1.35fr); }
+.telegramPage .telegramGrid > section { min-width:0; }
+.telegramPage .telegramHistory { grid-column:1/-1; }
+.telegramPage summary { cursor:pointer; color:#006da4; font-size:13px; font-weight:700; padding:6px 0; }
+.telegramPage .telegramScope { margin-top:12px; }
+.telegramPage .telegramAccount { padding:14px 0; }
+.telegramPage .telegramAccount p { margin:7px 0 0; font-size:12px; }
+.telegramPage .telegramBulk { padding:10px 12px; }
+.telegramPage .telegramBulk[open] summary { margin-bottom:12px; }
+.telegramPage .telegramRooms .checkRow { padding:10px 12px; }
+@media(max-width:760px) { .telegramPage .telegramGrid { grid-template-columns:1fr; } .telegramPage button { min-height:40px; } }
 .nodeFilters { display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; margin:18px 0; }
 .nodeFilters label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:#506b7b; min-width:0; }
 .nodeFilters input,.nodeFilters select { min-height:44px; min-width:0; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; color:#24465b; }
