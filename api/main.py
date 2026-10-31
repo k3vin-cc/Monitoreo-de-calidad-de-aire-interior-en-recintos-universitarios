@@ -1534,8 +1534,10 @@ def update_profile(body: dict[str, Any], user=Depends(current_user)):
     allowed = {k: v for k, v in body.items() if k in ("nombre", "telefono")}
     if "password" in body:
         password = body["password"]
-        if not isinstance(password, str) or len(password) < 12 or len(password) > 128:
-            raise HTTPException(422, "La contraseña debe tener entre 12 y 128 caracteres")
+        if not isinstance(password, str) or len(password) < 8 or len(password) > 128:
+            raise HTTPException(422, "La contraseña debe tener entre 8 y 128 caracteres")
+        if not isinstance(body.get("confirmPassword"), str) or body["confirmPassword"] != password:
+            raise HTTPException(422, "La confirmación de la contraseña no coincide")
         current_password = body.get("currentPassword")
         row = fetch_one("SELECT password FROM usuarios WHERE id=%s", (user["id"],))
         if not isinstance(current_password, str) or not row or not bcrypt.checkpw(current_password.encode(), row["password"].encode()):

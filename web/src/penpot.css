@@ -352,6 +352,11 @@
 .profileSecurity h3 { margin: 0 0 5px; font-size: 15px; }
 .profileSecurity .helper { margin: 0; }
 .profileSecurity .formGrid { grid-column: 1 / -1; width: 100%; }
+.profilePasswordField { position: relative; display: flex; width: 100%; align-items: center; }
+.profilePasswordField input { padding-right: 39px; }
+.profilePasswordField .profileEye { position: absolute; right: 4px; width: 31px; height: 31px; padding: 0; color: #60798b; }
+.profilePasswordField .profileEye:hover { color: var(--deep); background: #edf5f8; }
+.profilePasswordMismatch { color: #a83131; font-size: 11px; }
 .profileActions { display: flex; justify-content: flex-end; gap: 9px; }
 @media (max-width:760px) {
   .profileFormPanel .formGrid { grid-template-columns: 1fr; }
