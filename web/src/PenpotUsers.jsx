@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CircleAlert, KeyRound, Plus, RefreshCw, Search, Trash2, Users, X } from 'lucide-react';
+import { Check, CircleAlert, KeyRound, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { api } from './services';
 import { ROLE_LABEL } from './domain';
 
@@ -197,7 +197,6 @@ export default function PenpotUsers({
       <p className="usersResultCount" role="status">{loading ? 'Cargando cuentas…' : `${filtered.length} de ${users.length} cuentas`}</p>
       {!loading && <div className="tableScroll"><table><thead><tr><th scope="col">Usuario</th><th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Edificios autorizados</th><th scope="col">Acciones</th></tr></thead><tbody>{filtered.map(user => <UserRow key={user.id} user={user} buildings={buildings} currentUserId={currentUserId} isLastActiveAdmin={user.rol === 'ADMIN' && user.estado === 'activo' && stats.activeAdmins === 1} disabled={disabled} pending={pending === user.id} onUpdate={update} onOpen={openDialog} />)}</tbody></table>{!filtered.length && <div className="empty"><b>{users.length ? 'No hay cuentas que coincidan' : 'No hay cuentas disponibles'}</b><span>{users.length ? 'Prueba otro nombre, correo o filtro.' : 'Actualiza la lista o crea una cuenta.'}</span></div>}</div>}
     </section>
-    <div className="usersInfo"><Users size={23} /><div><b>Acceso controlado por rol y ubicación</b><span>Administrador tiene acceso total. Analista y Visualizador acceden a los edificios asignados. Invitado ingresa sin crear una cuenta.</span></div></div>
     {modal && <UserDialog title={titles[modal.kind]} pending={Boolean(pending)} onClose={closeDialog}>
       {modal.user && <div className="usersTarget"><b>{modal.user.nombre}</b><span>{modal.user.email}</span></div>}
       {dialogError && <div className="notice error usersNotice" role="alert"><CircleAlert size={17} />{dialogError}</div>}

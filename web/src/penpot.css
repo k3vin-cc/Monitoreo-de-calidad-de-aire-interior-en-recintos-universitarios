@@ -132,9 +132,6 @@
 .penpotUsers .rowActions { flex-wrap: wrap; }
 .penpotUsers .iconBtn { min-width: 40px; min-height: 40px; }
 .penpotUsers .currentUserNote { font-size: 12px; color: #506b7b; line-height: 1.5; }
-.penpotUsers .usersInfo span { font-size: 13px; line-height: 1.6; }
-.penpotUsers .usersInfo b { font-size: 14px; }
-.penpotUsers .usersInfo>svg { flex-shrink: 0; }
 .penpotUsers button:disabled, .penpotUsers select:disabled { opacity: .6; cursor: not-allowed; }
 .penpotUsers :is(button,input,select):focus-visible { outline: 3px solid #007dbc; outline-offset: 3px; }
 .penpotUsers .usersFilters label:focus-within { outline: 3px solid #007dbc; outline-offset: 2px; }
