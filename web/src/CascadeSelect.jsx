@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {ChevronDown} from 'lucide-react';
 
 function normalize(value){return String(value||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim()}
@@ -39,10 +39,19 @@ function pathForValue(levels,value){
 }
 
 export default function CascadeSelect({name,label,levels,value='',required=false,formatPath,searchPlaceholder,emptyLabel='Selecciona…',onChange,hideLabel=false,compact=false}){
- const firstOpen=()=>levels.map((_,i)=>compact?i===levels.length-1:i===0);
+ // Las cargas de datos y los cambios de valor no deben desplegar opciones por sí solos.
+ const firstOpen=()=>levels.map(()=>false);
+ const rootRef=useRef(null);
  const [path,setPath]=useState(()=>pathForValue(levels,value)),[queries,setQueries]=useState(()=>levels.map(()=>'')),[open,setOpen]=useState(firstOpen);
  const levelsKey=levels.map(level=>`${level.key||level.label}:${level.rows.length}`).join('|');
  useEffect(()=>{setPath(pathForValue(levels,value));setQueries(levels.map(()=>''));setOpen(firstOpen())},[value,levelsKey]);
+ /** Nombre: cerrar al salir. Razón: evitar listas persistentes al interactuar con otro control.
+  * Entradas: eventos del documento. Salida: cierra opciones. Efectos: registra y limpia un listener. */
+ useEffect(()=>{
+  const closeOutside=event=>{if(!rootRef.current?.contains(event.target))setOpen(current=>current.map(()=>false))};
+  document.addEventListener('pointerdown',closeOutside);
+  return()=>document.removeEventListener('pointerdown',closeOutside);
+ },[]);
  const optionsAt=i=>{
   if(compact&&i===levels.length-1)return levels[i].rows;
   const level=levels[i];if(i===0||!level.parentKey)return level.rows;
@@ -60,10 +69,10 @@ export default function CascadeSelect({name,label,levels,value='',required=false
  const choose=(i,row)=>{
   const next=[...path];next[i]=row.id;for(let j=i+1;j<next.length;j++)next[j]='';
   setPath(next);setQueries(current=>current.map((q,index)=>index>=i?'':q));
-  setOpen(current=>current.map((isOpen,index)=>index===i?false:index===i+1?true:index>i+1?false:isOpen));
+  setOpen(firstOpen());
   if(i===levels.length-1)onChange?.(row.id);else onChange?.('');
  };
- return <div className={`cascadeField${hideLabel?' visuallyHiddenLabel':''}${compact?' compactCascade':''}`}>
+ return <div ref={rootRef} onKeyDown={event=>{if(event.key==='Escape'&&open.some(Boolean)){event.preventDefault();event.stopPropagation();setOpen(firstOpen());rootRef.current?.querySelector('[aria-expanded="true"]')?.focus()}}} className={`cascadeField${hideLabel?' visuallyHiddenLabel':''}${compact?' compactCascade':''}`}>
   <span className="cascadeLabel">{label}</span>
   <input type="hidden" name={name} value={path[path.length-1]||''} required={false}/>
   <div className="cascadeLevels">{levels.map((level,i)=>{
@@ -71,7 +80,7 @@ export default function CascadeSelect({name,label,levels,value='',required=false
    const {base,display,matchCount,format}=visibleOptions(i),waiting=i>0&&!path[i-1]&&!compact;
    const selected=base.find(row=>row.id===path[i]);
    const selectedText=selected?format(selected):waiting?`Selecciona ${levels[i-1]?.label.toLocaleLowerCase('es')} primero`:emptyLabel;
-   const toggle=()=>{if(waiting)return;setOpen(current=>current.map((v,index)=>index===i?!v:index===i?false:v))};
+   const toggle=()=>{if(waiting)return;setOpen(current=>current.map((v,index)=>index===i?!v:false))};
    return <div className="cascadeFilter" key={level.key||level.label}>
     <label>{level.label}</label>
     <button type="button" className="cascadeFilterButton" aria-expanded={Boolean(open[i])} onClick={toggle} disabled={waiting} title={selectedText}><span>{selectedText}</span><ChevronDown size={14}/></button>

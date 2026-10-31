@@ -198,6 +198,8 @@ Se revisaron `NodesPage`, `NodeRoomSelect`, `NodeInventory`, estilos, servicios 
 
 ## 2026-10-30 — Mejoras de Nodos desplegadas
 
+Corrección del selector compartido: `web/src/CascadeSelect.jsx` inicializaba opciones abiertas y repetía esa apertura al actualizar valor/datos; también abría automáticamente el nivel siguiente. Ahora inicia cerrado en modo normal y compacto, abre un solo nivel por clic y cierra al elegir, pulsar fuera o Escape. Afecta formularios de ubicación que usan este componente; no modifica valores ni contratos HTTP. Prueba de render inicial con valor seleccionado correcta en ambos modos, build correcto, rollout completo, 45 archivos publicados idénticos y API `ok`. Interacciones visuales pendientes del usuario. Reversión mediante el commit aislado de este ajuste.
+
 Corrección posterior a la captura del usuario: `web/src/penpot.css` elimina el scroll del contenedor de nodos y hace que las opciones de sala amplíen la fila en flujo normal. La tabla usa ancho fijo y permite partir texto para ajustarse al panel. La causa era `overflow:auto` junto con el desplegable absoluto de `compactCascade`. Build y rollout correctos, 45 archivos publicados idénticos por SHA-256 y API `ok`; revisión visual pendiente del usuario. Se puede revertir este ajuste mediante su commit aislado. No hay cambios de datos ni API.
 
 - `web/src/ui.jsx`: `NodesPage` comparte ubicaciones y monta sólo la pestaña activa; añade filtros/páginas, detalles técnicos, fechas del catálogo y publicación desplegable. `NodeRoomSelect` usa datos compartidos, bloquea duplicados y muestra errores. USB carga el catálogo y conserva visible su operación mediante bloqueo de pestañas.
