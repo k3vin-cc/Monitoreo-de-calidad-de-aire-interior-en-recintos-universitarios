@@ -108,6 +108,24 @@
 .nodeTabs { display: flex; gap: 24px; border-bottom: 1px solid #d8e3ec; margin: -2px 0 22px; }.nodeTabs button { min-height: 45px; padding: 0 7px; border: 0; border-bottom: 3px solid transparent; color: #6e8596; background: transparent; font-weight: 700; font-size: 12px; }.nodeTabs button.selected { color: #006da4; border-bottom-color: #fec601; }.nodeStats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-bottom: 20px; }.nodeStats .statCard { min-height: 112px; }.nodeGrid { grid-template-columns: 1fr; }.nodeGrid > .panel { display: none; }.nodeTab-nodes > .panel:nth-child(1), .nodeTab-firmware > .panel:nth-child(2), .nodeTab-firmware > .panel:nth-child(3), .nodeTab-usb > .panel:nth-child(4) { display: block; }.nodeTab-firmware { grid-template-columns: repeat(2,minmax(0,1fr)); }.nodeGrid .panel { min-width: 0; }
 .alertStats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-bottom: 20px; }.alertStats .statCard { min-height: 112px; }
 .crudTabs { display: flex; gap: 9px; border-bottom: 1px solid #d8e3ec; margin: 0 0 18px; overflow-x: auto; }.crudTabs button { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 13px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #687f90; font-weight: 700; white-space: nowrap; }.crudTabs button.selected { color: #006da4; border-bottom-color: #fec601; }.crudTabs button span { min-width: 21px; padding: 2px 6px; border-radius: 12px; background: #edf3f6; font-size: 10px; text-align: center; }.crudPanel { padding: 23px; }.crudPanel .panelHead p { margin: 4px 0 0; color: #748b9a; font-size: 11px; }.crudPanel .tableScroll { margin-top: 14px; }.crudPanel table td { padding-top: 14px; padding-bottom: 14px; }.dangerIcon { color: #b33a3a; }.dangerIcon:hover { background: #fbe9e7; }.crudNotice { margin-bottom: 14px; }.locationsAdmin textarea { width: 100%; min-height: 90px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; }.spanTwo { grid-column: span 2; }
+
+.locationsAdmin .crudTabs button { font-size: 14px; }
+.locationsAdmin .crudPanel .panelHead p,.locationsAdmin .listSearch,.locationsAdmin .locationResultCount { font-size: 13px; line-height: 1.5; }
+.locationsAdmin .locationResultCount { display: block; color: #506b7b; margin-bottom: 10px; }
+.locationsAdmin .crudPanel table { min-width: 650px; }
+.locationsAdmin .crudPanel table td { font-size: 14px; vertical-align: middle; }
+.locationsAdmin .crudPanel table td:first-child { min-width: 190px; overflow-wrap: anywhere; }
+.locationsAdmin .locationId { font-size: 11px; font-weight: 400; color: #657d8d; overflow-wrap: anywhere; }
+.locationsAdmin .rowActions .iconBtn { min-width: 42px; min-height: 42px; }
+.locationsAdmin :is(button,input,textarea):focus-visible { outline: 3px solid #007dbc; outline-offset: 2px; }
+.locationsAdmin .locationModal { border: 1px solid #d8e3ec; margin: auto; color: #24465b; }
+.locationsAdmin .locationModal::backdrop { background: rgba(15,43,58,.5); }
+.locationsAdmin .locationModal .stack label { font-size: 14px; }
+.locationsAdmin .locationModal .formGrid :is(input,textarea) { font-size: 16px; min-height: 44px; }
+.locationsAdmin .locationModal .locationConfirmName { display: flex; flex-direction: column; gap: 7px; font-weight: 700; }
+.locationsAdmin .locationModal .locationConfirmName input { border: 1px solid #b5c8d5; border-radius: 8px; padding: 9px 11px; }
+.locationsAdmin .locationModal .dialogActions button { min-height: 44px; }
+@media (max-width:760px) { .locationsAdmin .locationModal { width: min(100%,calc(100% - 24px)); padding: 18px; } .locationsAdmin .locationModal .formGrid { grid-template-columns: 1fr; } .locationsAdmin .locationModal .dialogActions { flex-wrap: wrap; } }
 @media (max-width: 760px) { .nodeStats, .nodeTab-firmware { grid-template-columns: 1fr; }.nodeTabs { gap: 9px; }.nodeTabs button { font-size: 11px; } }
 @media (max-width: 760px) { .alertStats { grid-template-columns: 1fr; } }
 @media (min-width: 761px) and (max-height: 760px) { .rail nav { gap: 6px; margin-top: 15px; }.navItem { min-height: 58px; gap: 4px; font-size: 9px; }.navItem svg { width: 19px; height: 19px; } }
