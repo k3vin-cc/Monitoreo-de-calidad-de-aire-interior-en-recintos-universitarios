@@ -275,3 +275,7 @@ HistoryRoomPicker.jsx reúne búsqueda y elección de sala con ruta, teclado y c
 ## 2026-10-31 — Preparación de sincronización con GitHub
 
 `RESUMEN_PUBLICACION_GITHUB_2026-10-31.md` describe por página y por archivo el propósito de los 24 commits locales acumulados desde `origin/main`. Se verificó que `origin/main` es ancestro de la rama actual y que el diff no contiene errores de espacio. Los cuatro archivos no rastreados de contexto o trabajo temporal permanecen fuera del envío. El usuario autorizó expresamente el push.
+
+## 2026-10-31 — Ojo duplicado en el cambio de contraseña
+
+`web/src/penpot.css` oculta el control nativo `::-ms-reveal` y el botón de limpieza `::-ms-clear` solo en los tres campos de contraseña de Perfil. El ojo de la aplicación permanece visible y accesible; no cambian valores, validación ni API. Respaldo de ConfigMaps web, hashes y restauración en `C:\Users\corte\.codex\backups\aira-perfil-ojo-20261031-antes`; etiqueta `respaldo/perfil-ojo-20261031`. Build correcto, rollout web completo, salud de API `ok`, 48 assets publicados idénticos por SHA-256 y respaldo íntegro. Validación visual en el navegador del usuario pendiente.

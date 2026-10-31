@@ -19,6 +19,8 @@ No se modifican roles, JWT, base de datos, permisos efectivos, rutas, dependenci
 
 Por solicitud del usuario, el cambio de contraseña desde Perfil acepta entre 8 y 128 caracteres. Se repite la nueva contraseña y se muestran errores si no coincide; el servidor aplica la misma regla y compara la confirmación antes de modificar el hash. Cada uno de los tres campos de contraseña tiene un control de ojo minimalista e independiente. La creación y el restablecimiento administrativo de cuentas conservan su política vigente de 12 caracteres; no se alteran flujos ajenos a Perfil.
 
+Se corrigió la duplicación visual del ojo en navegadores que añaden un control nativo a los campos de contraseña. El CSS de Perfil oculta solo ese control nativo y conserva el botón accesible de la aplicación. Respaldo web anterior al ajuste: `C:\Users\corte\.codex\backups\aira-perfil-ojo-20261031-antes`, etiqueta Git `respaldo/perfil-ojo-20261031`.
+
 Este ajuste reduce de 12 a 8 caracteres el mínimo del flujo de Perfil. NIST SP 800-63B-4 indica un mínimo de 15 caracteres para contraseñas usadas como único factor y permite un mínimo de 8 cuando forman parte de autenticación multifactor; AIRA no tiene un segundo factor en este flujo. Se aplica el mínimo solicitado por el usuario y se deja explícita esta limitación de seguridad: [NIST SP 800-63B-4](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-63b-4.pdf).
 
 ## Verificación y reversión
