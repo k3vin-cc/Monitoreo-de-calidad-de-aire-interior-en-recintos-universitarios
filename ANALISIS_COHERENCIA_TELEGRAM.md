@@ -1,5 +1,15 @@
 # Revisión de coherencia funcional de Telegram
 
+## Implementación aplicada
+
+Sobre `4f73897`: TelegramPage descarta respuestas de vínculo anteriores a escrituras; invalida consultas de historial al cambiar vínculo y limpia su contenido local. El reloj se actualiza continuamente para evaluar pausas y códigos. Las suscripciones visibles usan la lista guardada, por lo que desmarcar no oculta la fila antes de guardar. Los estados locales se describen como «Se añadirá/quitará al guardar», sin repetir condiciones globales en cada sala. Se agregó Cancelar cambios y recuperación explícita de 409 con confirmación antes de descartar el borrador.
+
+Las pausas individuales aparecen fuera de la etiqueta de selección e indican que se aplican inmediatamente. Seleccionar todos los resultados sólo aparece con más de una página; quitar se limita a la página visible. El historial carga al abrirse y usa textos legibles. Se eliminó código de confirmación de revinculación sin acceso y el botón permanente de comprobar vínculo: sólo aparece con código pendiente. API devuelve fecha de vinculación y cuatro últimos caracteres del chat propio para identificar una cuenta sin username. Los estilos de Telegram se consolidaron en un bloque, con casillas aisladas y un pie único de guardado.
+
+Archivos: `web/src/TelegramPage.jsx`, `web/src/penpot.css`, `api/main.py`. Sin esquema, dependencias ni reglas de generación de alertas nuevas. Respaldo: `C:\Users\corte\.codex\backups\aira-telegram-coherencia-20261030-antes`, etiqueta `respaldo/telegram-coherencia-20261030`; su `Restaurar.ps1` restaura web/API. Revertir código por commit aislado; restaurar la aplicación no revierte preferencias ya guardadas.
+
+Python y Vite compilaron; la prueba con BD simulada verificó forma de preferencias, referencia parcial y rechazo GUEST. Pruebas visuales y de carrera completas en navegador pendientes del usuario. Este lote no añade paginación servidor del catálogo ni un protocolo de versionado compartido con todos los escritores del bot: las limitaciones de escala/concurrencia descritas abajo siguen pendientes. No se enviaron mensajes ni se probaron escrituras reales.
+
 Fecha: 2026-10-30. Base: `0be383a`. Alcance: análisis estático de TelegramPage, servicios, CSS, endpoints y manejadores de vinculación/preferencias del bot. No se modificó la aplicación ni se enviaron mensajes.
 
 ## Modelo que debe entender el usuario

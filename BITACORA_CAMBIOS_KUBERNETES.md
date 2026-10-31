@@ -245,3 +245,7 @@ TelegramPage.jsx sustituye Mostrar sólo mis salas por Sólo salas seleccionadas
 ## 2026-10-30 — Revisión integral de coherencia de Telegram
 
 ANALISIS_COHERENCIA_TELEGRAM.md revisa significados, duplicaciones y comportamiento real de controles; identifica mezcla de borrador/estado guardado, acciones inmediatas, respuestas obsoletas, recuperación de conflictos y límites de escala. Propone una interfaz única y criterios de aceptación. Sólo documentación; sin cambios de aplicación o mensajes.
+
+## 2026-10-30 — Coherencia de estados y flujo Telegram
+
+TelegramPage.jsx separa selección guardada y borrador, descarta consultas antiguas de vínculo e historial, actualiza vencimientos, permite recuperar conflictos sin pérdida implícita y añade pausas individuales. Historial carga al abrir; se retiran repeticiones globales y código inaccesible de revinculación. penpot.css consolida estilos de Telegram. api/main.py devuelve fecha y referencia parcial de cuenta propia. ANALISIS_COHERENCIA_TELEGRAM.md documenta alcance y pendientes. Respaldo C:\Users\corte\.codex\backups\aira-telegram-coherencia-20261030-antes. Python/build y prueba simulada de preferencias/roles correctos; ambos rollouts completos, API ok. Sin mensajes ni escrituras de prueba; revisión visual pendiente. Paginación servidor del catálogo y versionado completo del bot siguen pendientes.

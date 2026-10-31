@@ -2360,7 +2360,7 @@ def telegram_link(response: Response, user=Depends(current_user)):
 @app.get("/telegram/preferencias")
 def get_telegram_preferences(user=Depends(current_user)):
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado no tiene preferencias personales")
-    link=fetch_one('SELECT "chatVinculado","avisosActivos","telegramUsername" FROM telegram_vinculos WHERE "usuarioId"=%s',(user["id"],))
+    link=fetch_one('SELECT "chatVinculado","avisosActivos","telegramUsername","vinculadoEn",right("chatId"::text,4) AS "cuentaReferencia" FROM telegram_vinculos WHERE "usuarioId"=%s',(user["id"],))
     rooms=fetch_all('''SELECT pref."salaId",pref."pausadoHasta" FROM telegram_preferencias_salas pref
         JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
         JOIN edificios ed ON ed.id=p."edificioId"

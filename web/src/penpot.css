@@ -105,52 +105,41 @@
 @media (max-width: 760px) { .usersFilters { flex-direction: column; }.usersFilters label, .usersFilters select { width: 100%; }.usersSummary { grid-template-columns: 1fr; }.userDialog { padding: 18px; } }
 
 /* Navegación por dispositivos, firmware y USB. */
-.telegramPage .telegramGrid { align-items:start; margin-top:18px; }
-.telegramPage .notice { margin:12px 0; }
-.telegramPage ol { padding-left:22px; line-height:1.9; color:#506b7b; font-size:14px; }
-.telegramPage .stack label { font-size:14px; }
-.telegramPage input[type="search"] { min-height:44px; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:10px; }
-.telegramPage .telegramRooms { display:grid; gap:8px; }
-.telegramPage .telegramScope { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-.telegramPage .telegramScope label { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.telegramPage select { min-height:44px; border:1px solid #b5c8d5; border-radius:8px; padding:8px; width:100%; min-width:0; }
-.telegramPage .telegramBulk { background:#f0f6fa; border:1px solid #d8e3ec; border-radius:10px; padding:14px; }
-.telegramPage .telegramBulk p { margin:0 0 10px; font-size:13px; }
-.telegramPage .telegramBulk .inlineActions { margin-bottom:12px; flex-wrap:wrap; }
-@media(max-width:760px) { .telegramPage .telegramScope { grid-template-columns:1fr; } }
-.telegramPage .telegramRooms .checkRow { padding:12px; border:1px solid #d8e3ec; border-radius:9px; align-items:flex-start; }
-.telegramPage .telegramRooms small { display:block; margin-top:5px; line-height:1.5; }
-.telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
-.telegramPage button { min-height:34px; width:auto; max-width:100%; padding:7px 12px; font-size:13px; align-self:flex-start; }
-.telegramPage .inlineActions { flex-wrap:wrap; gap:8px; }
-.telegramPage .telegramGrid { grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; }
-.telegramPage .telegramGrid > section { min-width:0; }
-.telegramPage .telegramHistory { grid-column:1/-1; }
-.telegramPage summary { cursor:pointer; color:#006da4; font-size:13px; font-weight:700; padding:6px 0; }
-.telegramPage .telegramScope { margin-top:12px; }
-.telegramPage .telegramAccount { padding:14px 0; }
-.telegramPage .telegramAccount p { margin:7px 0 0; font-size:12px; }
-.telegramPage .telegramBulk { padding:10px 12px; }
-.telegramPage .telegramBulk[open] summary { margin-bottom:12px; }
-.telegramPage .telegramRooms .checkRow { padding:10px 12px; }
-/* Los estilos de campos de texto no deben estirar las casillas de Telegram. */
-.telegramPage .stack input[type="checkbox"] { appearance:auto; width:17px; height:17px; min-width:17px; min-height:17px; flex:0 0 17px; padding:0; margin:2px 0; align-self:center; }
-.telegramPage .stack > label.checkRow { flex-direction:row; justify-content:flex-start; align-items:center; border:0; padding:0; font-weight:400; }
-.telegramPage .stack > label.toggleRow { padding:12px 14px; background:#f5f9fc; border:0; }
-.telegramPage .stack > label.toggleRow > span { flex:1; }
-.telegramPage .telegramRooms .checkRow { display:flex; flex-direction:row; align-items:flex-start; gap:12px; border:0; border-bottom:1px solid #e4edf2; border-radius:0; padding:12px 4px; }
-.telegramPage .telegramRooms .checkRow > input[type="checkbox"] { align-self:flex-start; margin-top:3px; }
-.telegramPage .telegramRooms small { font-size:12px; color:#5f7889; }
-.telegramPage .telegramAdvanced,.telegramPage .telegramBulk { border:0; border-top:1px solid #e4edf2; background:transparent; border-radius:0; padding:10px 0; }
-.telegramPage .telegramBulk button,.telegramPage .telegramHistory button { border:1px solid #d8e3ec; background:#fff; color:#37586c; border-radius:7px; font-weight:600; }
-.telegramPage .stack > p { margin:0; font-size:13px; }
-.telegramPage .telegramAccount { display:inline-block; padding:8px 16px; vertical-align:middle; }
+.telegramPage .telegramGrid { display:grid; grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; margin-top:18px; }
+.telegramPage .panel { min-width:0; }
 .telegramPage .panel h2 { font-size:18px; margin-bottom:14px; }
+.telegramPage .notice { margin:12px 0; }
+.telegramPage ol { padding-left:22px; line-height:1.8; color:#506b7b; font-size:13px; }
+.telegramPage button { width:auto; min-height:34px; padding:7px 12px; font-size:13px; border:1px solid #d8e3ec; border-radius:7px; background:#fff; color:#37586c; align-self:flex-start; }
+.telegramPage button.primary { background:#fec601; border-color:#fec601; color:#22384b; }
+.telegramPage .inlineActions { flex-wrap:wrap; gap:8px; }
+.telegramPage .stack label { font-size:13px; }
+.telegramPage .stack input[type="checkbox"] { appearance:auto; width:17px; height:17px; min-width:17px; min-height:17px; flex:0 0 17px; padding:0; margin:2px 0; align-self:center; }
+.telegramPage .stack > label.checkRow { flex-direction:row; justify-content:flex-start; border:0; padding:0; }
+.telegramPage .stack > label.toggleRow { padding:12px 14px; background:#f5f9fc; border:0; }
+.telegramPage .toggleRow > span { flex:1; }
+.telegramPage input[type="search"],.telegramPage select { min-height:40px; width:100%; min-width:0; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; }
+.telegramPage .telegramScope { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:12px; }
+.telegramPage .telegramScope label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.telegramPage summary { cursor:pointer; color:#006da4; font-size:13px; font-weight:700; padding:6px 0; }
+.telegramPage .telegramAdvanced,.telegramPage .telegramBulk { border-top:1px solid #e4edf2; padding:10px 0; }
+.telegramPage .telegramBulk[open] summary { margin-bottom:12px; }
+.telegramPage .telegramBulk p,.telegramPage .stack > p { margin:0 0 8px; font-size:13px; }
+.telegramPage .telegramBulk .inlineActions { margin-bottom:12px; }
+.telegramPage .telegramRooms { display:grid; }
+.telegramPage .telegramRoomRow { display:flex; align-items:flex-start; gap:14px; border-bottom:1px solid #e4edf2; padding:12px 0; }
+.telegramPage .telegramRoomRow > label { flex:1; display:flex; flex-direction:row; align-items:flex-start; gap:12px; border:0; padding:0; min-width:0; }
+.telegramPage .telegramRoomRow small { display:block; font-size:12px; color:#5f7889; margin-top:4px; line-height:1.5; }
+.telegramPage .telegramRoomActions { flex:none; max-width:210px; }
+.telegramPage .telegramRoomActions button { display:block; margin-top:6px; }
+.telegramPage .telegramAccount { display:inline-block; padding:8px 16px; vertical-align:middle; }
+.telegramPage .telegramAccount p { margin:7px 0 0; font-size:12px; }
+.telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
 .telegramPage .telegramHistory { background:#f8fbfd; }
-.telegramPage .telegramSaveBar { display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid #d8e3ec; padding-top:16px; }
-.telegramPage .telegramSaveBar p { margin:0; color:#5f7889; font-size:12px; }
+.telegramPage .telegramSaveBar { display:flex; align-items:center; justify-content:flex-end; gap:12px; border-top:1px solid #d8e3ec; padding-top:16px; }
+.telegramPage .telegramSaveBar p { margin:0 auto 0 0; color:#5f7889; font-size:12px; }
 .telegramPage .telegramSaveBar button { flex:none; }
-@media(max-width:760px) { .telegramPage .telegramGrid { grid-template-columns:1fr; } .telegramPage button { min-height:40px; } }
+@media(max-width:760px) { .telegramPage .telegramScope { grid-template-columns:1fr; } .telegramPage button { min-height:40px; } .telegramPage .telegramSaveBar { flex-wrap:wrap; } .telegramPage .telegramAccount { display:block; padding:12px 0; } }
 .nodeFilters { display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; margin:18px 0; }
 .nodeFilters label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:#506b7b; min-width:0; }
 .nodeFilters input,.nodeFilters select { min-height:44px; min-width:0; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; color:#24465b; }
