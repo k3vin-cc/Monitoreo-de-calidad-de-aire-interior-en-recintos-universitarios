@@ -105,6 +105,24 @@
 @media (max-width: 760px) { .usersFilters { flex-direction: column; }.usersFilters label, .usersFilters select { width: 100%; }.usersSummary { grid-template-columns: 1fr; }.userDialog { padding: 18px; } }
 
 /* Navegación por dispositivos, firmware y USB. */
+.nodeFilters { display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; margin:18px 0; }
+.nodeFilters label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:#506b7b; min-width:0; }
+.nodeFilters input,.nodeFilters select { min-height:44px; min-width:0; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; color:#24465b; }
+.nodePages { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:12px 0; color:#506b7b; font-size:13px; }
+.nodeAssignment { border:0; margin:0; padding:0; min-width:180px; }
+.nodeModal { border:1px solid #d8e3ec; margin:auto; color:#24465b; }
+.nodeModal::backdrop { background:rgba(15,43,58,.5); }
+.nodeModal .stack label { font-size:14px; }
+.nodeModal input { min-height:44px; font-size:16px; }
+.srNode { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+.nodeGrid table td,.nodeInventory table td { font-size:13px; vertical-align:top; }
+.nodeGrid details,.nodeInventory details { min-width:130px; font-size:12px; }
+.nodeGrid summary,.nodeInventory summary { cursor:pointer; color:#006da4; padding:6px 0; font-weight:700; }
+.nodeGrid details p,.nodeInventory details p { font-size:12px; overflow-wrap:anywhere; }
+.nodeInventory .iconBtn { min-height:42px; min-width:42px; }
+.usbSteps { padding:12px; background:#eaf5fa; border-radius:9px; font-size:13px; }
+.nodeGrid.nodeTab-firmware > .panel,.nodeGrid.nodeTab-usb > .panel { display:block; }
+@media(max-width:760px) { .nodeFilters { grid-template-columns:1fr; } .nodeInventory table,.nodeInventory tbody,.nodeInventory tr,.nodeTab-nodes table,.nodeTab-nodes tbody,.nodeTab-nodes tr { display:block; min-width:0; width:100%; } .nodeInventory thead,.nodeTab-nodes thead { display:none; } .nodeInventory tr,.nodeTab-nodes tr { border:1px solid #d8e3ec; border-radius:12px; padding:14px; margin-bottom:12px; } .nodeInventory table td,.nodeTab-nodes table td { display:block; border:0; padding:7px 0; width:100%; overflow-wrap:anywhere; } .nodeModal { width:calc(100% - 20px); } }
 .nodeTabs { display: flex; gap: 24px; border-bottom: 1px solid #d8e3ec; margin: -2px 0 22px; }.nodeTabs button { min-height: 45px; padding: 0 7px; border: 0; border-bottom: 3px solid transparent; color: #6e8596; background: transparent; font-weight: 700; font-size: 12px; }.nodeTabs button.selected { color: #006da4; border-bottom-color: #fec601; }.nodeStats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-bottom: 20px; }.nodeStats .statCard { min-height: 112px; }.nodeGrid { grid-template-columns: 1fr; }.nodeGrid > .panel { display: none; }.nodeTab-nodes > .panel:nth-child(1), .nodeTab-firmware > .panel:nth-child(2), .nodeTab-firmware > .panel:nth-child(3), .nodeTab-usb > .panel:nth-child(4) { display: block; }.nodeTab-firmware { grid-template-columns: repeat(2,minmax(0,1fr)); }.nodeGrid .panel { min-width: 0; }
 .alertStats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-bottom: 20px; }.alertStats .statCard { min-height: 112px; }
 .crudTabs { display: flex; gap: 9px; border-bottom: 1px solid #d8e3ec; margin: 0 0 18px; overflow-x: auto; }.crudTabs button { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 13px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #687f90; font-weight: 700; white-space: nowrap; }.crudTabs button.selected { color: #006da4; border-bottom-color: #fec601; }.crudTabs button span { min-width: 21px; padding: 2px 6px; border-radius: 12px; background: #edf3f6; font-size: 10px; text-align: center; }.crudPanel { padding: 23px; }.crudPanel .panelHead p { margin: 4px 0 0; color: #748b9a; font-size: 11px; }.crudPanel .tableScroll { margin-top: 14px; }.crudPanel table td { padding-top: 14px; padding-bottom: 14px; }.dangerIcon { color: #b33a3a; }.dangerIcon:hover { background: #fbe9e7; }.crudNotice { margin-bottom: 14px; }.locationsAdmin textarea { width: 100%; min-height: 90px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; }.spanTwo { grid-column: span 2; }

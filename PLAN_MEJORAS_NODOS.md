@@ -1,6 +1,6 @@
 # Análisis y plan de mejoras de Nodos
 
-Fecha: 2026-10-30. Estado: análisis de código y plan; sin cambios de aplicación. Base Git: `5435228`.
+Fecha: 2026-10-30. Estado: mejoras frontend desplegadas; revisión visual pendiente. Base de implementación: `8befd96`.
 
 ## Perímetro revisado
 
@@ -44,3 +44,17 @@ La API involucrada incluye `GET /nodos`, `GET /nodos/{nodoId}/resumen-retiro`, `
 La primera etapa pretende conservar rutas, roles, esquemas, endpoints, payloads, MQTT, Web Serial y datos. El principal riesgo es alterar una asignación o un estado de operación por mover la carga de ubicaciones fuera de cada fila; debe verificarse con al menos dos nodos en salas distintas y uno sin asignar. Cambiar la presentación del flujo USB requiere preservar su secuencia actual de selección de puerto, verificación SHA-256, escritura y confirmación del dispositivo.
 
 Antes de implementar, crear una etiqueta Git del commit estable y respaldar los tres ConfigMaps web publicados y el Deployment fuera del repositorio, con hashes y un script de restauración validado en el contexto `estudiante-kcortes` y namespace `student-kcortes`. Si se modifica backend en una etapa posterior, respaldar también API. Para revertir la web, restaurar juntos los tres ConfigMaps, reiniciar `calidad-web`, comprobar rollout y hashes, y crear un commit que deshaga sólo Nodos. Restaurar la interfaz no revierte altas, asignaciones, versiones de firmware, flasheos ni historial borrado; no se usarán esas operaciones irreversibles para la validación visual.
+
+## Implementación y comprobaciones
+
+Se implementó carga compartida de ubicaciones en `NodesPage`, montaje por pestaña activa y carga del catálogo también en USB (necesaria para seleccionar firmware). `NodeRoomSelect` recibe las ubicaciones, bloquea asignaciones duplicadas y muestra errores. El panel bloquea cambios de pestaña durante operaciones USB, monitor o retiro de firmware; el cambio de estado de firmware muestra fallos. La publicación de una versión queda en una sección desplegable, el catálogo muestra fecha y USB presenta pasos visibles sin modificar su protocolo.
+
+`NodeInventory.reload` consulta nodos y resumen en dos solicitudes paralelas y mantiene el inventario durante un refresco. `save` y `remove` bloquean duplicados y conservan errores en sus diálogos; borrar historial exige escribir el ID. `NodeDialog` contiene el foco y controla Escape. Ambas vistas usan `NodeListControls`, `filterNodes` y `NodePages` para búsqueda, filtros de estado/sala y 20 filas por página. MAC, red y firmware se muestran mediante detalles desplegables; móvil muestra filas como tarjetas. La paginación sigue siendo local y la API entrega el inventario completo.
+
+Respaldo previo en `C:\Users\corte\.codex\backups\aira-nodos-20261030-antes`, con tres ConfigMaps, Deployment, hashes y `Restaurar.ps1`; etiqueta Git `respaldo/nodos-20261030`. El reemplazo simulado de los respaldos fue aceptado. Para restaurar la web anterior:
+
+```powershell
+& 'C:\Users\corte\.codex\backups\aira-nodos-20261030-antes\Restaurar.ps1'
+```
+
+Build Vite correcto y prueba ejecutada de filtros con dos salas distintas, conexión y un nodo sin asignar. Rollout completo, 45 archivos publicados idénticos por SHA-256 y salud API `ok`. No se midieron tiempos reales ni se realizaron escrituras o pruebas físicas de flasheo/USB. El usuario hará la revisión visual. La validación de asignación real, firmware y dispositivo queda pendiente; los resultados anteriores no prueban el funcionamiento físico. No hubo cambios de backend, permisos, datos, protocolo ni dependencias.

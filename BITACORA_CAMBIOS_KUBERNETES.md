@@ -195,3 +195,13 @@ Base Git `f2b0653`, etiqueta `respaldo/espacios-modal-20261030`; respaldo de Con
 ## 2026-10-30 — Análisis y plan de Nodos
 
 Se revisaron `NodesPage`, `NodeRoomSelect`, `NodeInventory`, estilos, servicios HTTP, esquemas Pydantic y endpoints de nodos, firmware y aprovisionamiento. `PLAN_MEJORAS_NODOS.md` documenta los problemas comprobados en código, las etapas propuestas, límites de medición, compatibilidad y restauración. Se detectó que el selector de sala consulta cuatro listas por cada nodo incluso si su pestaña está oculta con CSS. No se modificó ni desplegó la aplicación; no hubo operaciones sobre dispositivos ni datos.
+
+## 2026-10-30 — Mejoras de Nodos desplegadas
+
+- `web/src/ui.jsx`: `NodesPage` comparte ubicaciones y monta sólo la pestaña activa; añade filtros/páginas, detalles técnicos, fechas del catálogo y publicación desplegable. `NodeRoomSelect` usa datos compartidos, bloquea duplicados y muestra errores. USB carga el catálogo y conserva visible su operación mediante bloqueo de pestañas.
+- `web/src/NodeInventory.jsx`: `reload` pasa de cinco consultas a dos, conserva filas al refrescar; `save` y `remove` controlan duplicados y errores locales. Añade confirmación por ID para borrar historial y `NodeDialog` con foco y Escape controlados.
+- `web/src/NodeListControls.jsx`: controles compartidos de búsqueda, estado, sala y paginación; prueba de `filterNodes` con dos salas distintas y un dispositivo sin asignar correcta.
+- `web/src/penpot.css`: filtros, detalles, diálogo, filas móviles como tarjetas y visibilidad de paneles condicionales.
+- `PLAN_MEJORAS_NODOS.md`: alcance aplicado, respaldo, restauración y límites de validación.
+
+Base `8befd96`, etiqueta `respaldo/nodos-20261030`; respaldo en `C:\Users\corte\.codex\backups\aira-nodos-20261030-antes`. Dry run de restauración aceptado, build correcto, tres ConfigMaps regenerados y reemplazados juntos, rollout completo, 45 assets idénticos por SHA-256 y API `ok`. Sin cambios de API, datos, roles o dependencias. Sin medición de latencia, escrituras reales o prueba física USB; revisión visual pendiente. La paginación es local. No se hizo push.
