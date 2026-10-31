@@ -182,3 +182,12 @@ La versión previa `133d8e3` quedó etiquetada `respaldo/espacios-volumen-202610
 - `k8s/05-web-core.yaml`, `k8s/05-web-assets.yaml`, `k8s/05-web-main-js.yaml`: se regeneraron juntos desde el mismo build de Vite para publicar CSS y JavaScript coherentes; son artefactos ignorados por Git.
 
 La versión previa `dddca8a` quedó etiquetada `respaldo/espacios-tarjetas-20261030`; ConfigMaps, Deployment, hashes y script de recuperación están en `C:\Users\corte\.codex\backups\aira-espacios-tarjetas-20261030-antes`. Dry run de reemplazo aceptado. Build correcto, rollout completo, 45 archivos servidos idénticos por SHA-256 y `/api/healthz` respondió `ok`. Sin cambios de API, permisos, esquema ni datos. La consulta `/nodos` sigue devolviendo la lista completa cuando se abre una sala o se busca globalmente; se medirá si el volumen futuro afecta su respuesta. Revisión visual del usuario pendiente; sin push automático.
+
+## 2026-10-30 — Explorador flotante de Espacios
+
+- `web/src/LocationsAdmin.jsx`: la vista principal conserva tarjetas de sectores; pulsar toda la tarjeta abre una ventana flotante que permite recorrer edificios, pisos, salas y nodos. La ventana mantiene ruta, búsqueda y paginación. Se añadió `closeExplorer` para volver a sectores y devolver el foco. El explorador se suspende al editar o retirar y vuelve a la misma ubicación al cerrar el formulario. Se amplió `LocationDialog` con una clase visual para el explorador.
+- `web/src/penpot.css`: añade área pulsable de tarjeta, dimensiones de la ventana, encabezado fijo y presentación de pantalla completa en móvil, limitados a `.locationsAdmin`.
+- `PLAN_MEJORAS_ESPACIOS.md`: registra el alcance, las pruebas y el procedimiento de restauración de esta etapa.
+- Los tres ConfigMaps web ignorados por Git se regeneraron desde el mismo build y se reemplazaron juntos.
+
+Base Git `f2b0653`, etiqueta `respaldo/espacios-modal-20261030`; respaldo de ConfigMaps, Deployment, hashes y `Restaurar.ps1` en `C:\Users\corte\.codex\backups\aira-espacios-modal-20261030-antes`. Dry run de restauración aceptado. Build correcto, rollout web completo, 45 archivos idénticos por SHA-256 y salud API `ok`. Sin cambios de API, permisos, esquema, datos ni dependencias. La revisión visual corresponde al usuario; no se hizo push.

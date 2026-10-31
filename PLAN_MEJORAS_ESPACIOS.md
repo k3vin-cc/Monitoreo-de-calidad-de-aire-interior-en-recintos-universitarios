@@ -99,3 +99,17 @@ Antes de editar se etiquetó `dddca8a` como `respaldo/espacios-tarjetas-20261030
 Tras ejecutar el script, comprobar el rollout, la salud API y los hashes publicados. Crear un commit que revierta únicamente esta tercera etapa en Git, sin `reset` destructivo. La restauración de la web no revierte escrituras realizadas después sobre espacios o nodos.
 
 El build Vite terminó correctamente, los tres ConfigMaps se reemplazaron como unidad y el rollout web concluyó. Los 45 archivos servidos coincidieron con `web/dist` por SHA-256 y `/api/healthz` respondió `ok`. No se realizaron mutaciones de datos ni revisión visual; la validación visual corresponde al usuario.
+
+## Cuarta etapa: exploración en ventana flotante
+
+Tras la revisión del usuario, se mantuvieron las tarjetas de sectores como vista principal. Ahora toda la tarjeta permite abrir un diálogo amplio: en él se recorren edificios, pisos, salas y nodos sin cambiar la ruta `/espacios`. Las tarjetas de edificios también se pueden pulsar completas. La ruta jerárquica, la búsqueda, las páginas de 20 resultados y los estados de error permanecen dentro del diálogo. En móvil el explorador ocupa la pantalla. El botón Cerrar y Escape regresan a sectores y devuelven el foco a la tarjeta cuando está visible.
+
+Editar y retirar siguen usando sus diálogos y validaciones existentes. Al abrir uno desde el explorador, éste se suspende y reaparece en la misma ubicación al terminar, para evitar superponer ventanas. No cambian las llamadas a API, roles, esquemas, SQL ni datos. `GET /nodos` conserva la carga diferida y su límite conocido: devuelve todos los nodos activos.
+
+La versión anterior `f2b0653` quedó etiquetada `respaldo/espacios-modal-20261030`. Los tres ConfigMaps web y el Deployment publicados se respaldaron en `C:\Users\corte\.codex\backups\aira-espacios-modal-20261030-antes` con hashes y `Restaurar.ps1`. El reemplazo simulado fue aceptado. Para recuperar esa versión:
+
+```powershell
+& 'C:\Users\corte\.codex\backups\aira-espacios-modal-20261030-antes\Restaurar.ps1'
+```
+
+Después comprobar rollout, salud y hashes; revertir sólo esta etapa mediante un commit Git. Restaurar la web no revierte escrituras posteriores. Build Vite correcto, despliegue conjunto de los tres ConfigMaps, rollout completo, 45 archivos publicados idénticos por SHA-256 y `/api/healthz` en `ok`. No se realizaron operaciones de escritura ni revisión visual; el usuario comprobará la presentación.
