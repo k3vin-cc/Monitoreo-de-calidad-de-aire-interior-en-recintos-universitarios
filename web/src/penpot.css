@@ -111,6 +111,13 @@
 .telegramPage .stack label { font-size:14px; }
 .telegramPage input[type="search"] { min-height:44px; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:10px; }
 .telegramPage .telegramRooms { display:grid; gap:8px; }
+.telegramPage .telegramScope { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.telegramPage .telegramScope label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.telegramPage select { min-height:44px; border:1px solid #b5c8d5; border-radius:8px; padding:8px; width:100%; min-width:0; }
+.telegramPage .telegramBulk { background:#f0f6fa; border:1px solid #d8e3ec; border-radius:10px; padding:14px; }
+.telegramPage .telegramBulk p { margin:0 0 10px; font-size:13px; }
+.telegramPage .telegramBulk .inlineActions { margin-bottom:12px; flex-wrap:wrap; }
+@media(max-width:760px) { .telegramPage .telegramScope { grid-template-columns:1fr; } }
 .telegramPage .telegramRooms .checkRow { padding:12px; border:1px solid #d8e3ec; border-radius:9px; align-items:flex-start; }
 .telegramPage .telegramRooms small { display:block; margin-top:5px; line-height:1.5; }
 .telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
