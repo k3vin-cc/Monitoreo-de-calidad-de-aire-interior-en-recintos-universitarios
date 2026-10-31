@@ -342,3 +342,21 @@
   .penpotUsers .usersModal .dialogActions { flex-wrap: wrap; }
   .penpotUsers .usersModal .dialogActions button { flex: 1; min-height: 44px; }
 }
+
+/* Perfil separa datos personales, permisos informativos y cambio de contraseña. */
+.profileFormPanel > .helper { margin: -4px 0 18px; }
+.profileFormPanel .formGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profileAccess { display: flex; flex-direction: column; gap: 7px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #f7fafb; color: #416075; font-size: 12px; }
+.profileAccess small, .profileSecurity .helper { color: var(--muted); font-size: 11px; font-weight: 400; }
+.profileSecurity { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.profileSecurity h3 { margin: 0 0 5px; font-size: 15px; }
+.profileSecurity .helper { margin: 0; }
+.profileSecurity .formGrid { grid-column: 1 / -1; width: 100%; }
+.profileActions { display: flex; justify-content: flex-end; gap: 9px; }
+@media (max-width:760px) {
+  .profileFormPanel .formGrid { grid-template-columns: 1fr; }
+  .profileSecurity { grid-template-columns: 1fr; }
+  .profileSecurity .formGrid { grid-column: 1; }
+  .profileActions { flex-direction: column-reverse; }
+  .profileActions button { width: 100%; }
+}
