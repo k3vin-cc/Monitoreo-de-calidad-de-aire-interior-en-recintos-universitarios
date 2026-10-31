@@ -237,3 +237,7 @@ TelegramPage.jsx prioriza cuenta vinculada y una búsqueda familiar; filtros, ac
 ## 2026-10-30 — Corrección de controles gigantes y distribución de Telegram
 
 penpot.css corrige herencia de ancho/alto de campos de texto sobre checkboxes: casillas de 17 px y etiquetas horizontales. Distribución en una columna, filas de salas y acciones secundarias discretas. TelegramPage.jsx aclara títulos y agrupa Guardar con el estado al final. PLAN_MEJORAS_TELEGRAM.md registra causa y reversión; respaldo C:\Users\corte\.codex\backups\aira-telegram-orden-20261030-antes. Build/rollout y salud correctos, 46 archivos publicados idénticos por SHA-256. Sin API o datos; validación visual pendiente.
+
+## 2026-10-30 — Etiqueta de suscripciones de Telegram
+
+TelegramPage.jsx sustituye Mostrar sólo mis salas por Sólo salas seleccionadas para recibir avisos. El filtro afecta selección de notificaciones, no permisos: ADMIN ve todas las salas y otros usuarios su ámbito autorizado. Build y rollout correctos; API ok. Sin cambios de comportamiento, permisos o datos; reversión mediante este commit.
