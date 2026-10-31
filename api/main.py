@@ -155,6 +155,8 @@ class TelegramPreferencesIn(BaseModel):
     avisosActivos: StrictBool = False
     salas: list[StrictStr] = Field(default_factory=list)
     exportacion: StrictBool = False
+    salasBase: list[StrictStr] | None = None
+    avisosBase: StrictBool | None = None
 
 
 class FirmwarePatch(BaseModel):
@@ -2376,11 +2378,65 @@ def put_telegram_preferences(body: TelegramPreferencesIn, user=Depends(current_u
     for room in rooms: ensure_room_access(user,room)
     if user["rol"] not in ("ADMIN","ANALISTA") and body.exportacion: raise HTTPException(403,"Exportación requiere rol ADMIN o ANALISTA")
     with db() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "avisosActivos" FROM telegram_vinculos WHERE "usuarioId"=%s FOR UPDATE',(user["id"],))
+        current=cur.fetchone()
+        if current and body.avisosBase is not None and current["avisosActivos"] != body.avisosBase:
+            raise HTTPException(409,"Los avisos cambiaron desde otra sesión. Actualiza las preferencias antes de guardar.")
         cur.execute('''INSERT INTO telegram_vinculos ("usuarioId","avisosActivos","updatedAt") VALUES (%s,%s,NOW())
             ON CONFLICT ("usuarioId") DO UPDATE SET "avisosActivos"=EXCLUDED."avisosActivos","updatedAt"=NOW()''',(user["id"],body.avisosActivos))
-        cur.execute('DELETE FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND NOT ("salaId"=ANY(%s::text[]))',(user["id"],rooms))
-        for room in set(rooms):
-            cur.execute('INSERT INTO telegram_preferencias_salas ("usuarioId","salaId") VALUES (%s,%s) ON CONFLICT DO NOTHING',(user["id"],room))
+        if body.salasBase is None:
+            cur.execute('DELETE FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND NOT ("salaId"=ANY(%s::text[]))',(user["id"],rooms))
+            added=rooms
+        else:
+            removed=list(set(body.salasBase)-set(rooms))
+            added=list(set(rooms)-set(body.salasBase))
+            cur.execute('DELETE FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND "salaId"=ANY(%s::text[])',(user["id"],removed))
+        cur.execute('INSERT INTO telegram_preferencias_salas ("usuarioId","salaId") SELECT %s,unnest(%s::text[]) ON CONFLICT DO NOTHING',(user["id"],added))
+    return get_telegram_preferences(user)
+
+
+class TelegramPauseIn(BaseModel):
+    salas: list[StrictStr] = Field(min_length=1, max_length=1000)
+    horas: Literal[0, 1, 24]
+
+
+@app.put("/telegram/pausas")
+def telegram_pause(body: TelegramPauseIn, user=Depends(current_user)):
+    """Nombre: telegram_pause. Razón: pausar salas desde la web con las reglas del bot.
+    Entradas: salas autorizadas y horas. Salida: preferencias. Efectos: actualiza pausadoHasta.
+    """
+    if user["rol"] == "GUEST": raise HTTPException(403,"Acceso de invitado no permitido")
+    for room in set(body.salas): ensure_room_access(user,room)
+    execute('''UPDATE telegram_preferencias_salas SET "pausadoHasta"=CASE WHEN %s=0 THEN NULL
+        ELSE NOW()+(%s * INTERVAL '1 hour') END WHERE "usuarioId"=%s AND "salaId"=ANY(%s::text[])''',
+        (body.horas,body.horas,user["id"],list(set(body.salas))))
+    return get_telegram_preferences(user)
+
+
+@app.get("/telegram/envios")
+def telegram_deliveries(pagina: int = Query(1,ge=1), user=Depends(current_user)):
+    """Nombre: telegram_deliveries. Razón: consultar entregas propias sin exponer otros chats.
+    Entradas: página y usuario. Salida: hasta 20 envíos más indicador siguiente. Efectos: lectura.
+    """
+    if user["rol"] == "GUEST": raise HTTPException(403,"Acceso de invitado no permitido")
+    rows=fetch_all('''SELECT sent.tipo,sent."enviadoEn",s.nombre AS "salaNombre",ed.nombre AS "edificioNombre"
+        FROM telegram_avisos_enviados sent JOIN telegram_vinculos v ON v."chatId"=sent."chatId"
+        JOIN alertas a ON a.id=sent."alertaId" JOIN salas s ON s.id=a."salaId"
+        JOIN pisos p ON p.id=s."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
+        WHERE v."usuarioId"=%s AND v."chatVinculado"=TRUE AND (%s OR ed.id=ANY(%s::text[]))
+        ORDER BY sent."enviadoEn" DESC,sent."alertaId",sent.tipo LIMIT 21 OFFSET %s''',
+        (user["id"],user["rol"]=="ADMIN",user.get("assignedEdificios") or [],(pagina-1)*20))
+    return {"envios":rows[:20],"hayMas":len(rows)>20}
+
+
+@app.delete("/telegram/vinculo")
+def telegram_unlink(user=Depends(current_user)):
+    """Nombre: telegram_unlink. Razón: revocar vínculo y códigos. Entradas: usuario autenticado.
+    Salida: preferencias. Efectos: desactiva avisos y elimina identificadores de Telegram.
+    """
+    if user["rol"] == "GUEST": raise HTTPException(403,"Acceso de invitado no permitido")
+    execute('''UPDATE telegram_vinculos SET "chatVinculado"=FALSE,"avisosActivos"=FALSE,"chatId"=NULL,
+        "telegramUsername"=NULL,"codigoTemporal"=NULL,"codigoExpiraEn"=NULL,"updatedAt"=NOW() WHERE "usuarioId"=%s''', (user["id"],))
     return get_telegram_preferences(user)
 
 

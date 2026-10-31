@@ -223,3 +223,9 @@ TelegramPage.jsx separa la página de ui.jsx y añade comando copiable, vencimie
 ## 2026-10-30 — Análisis funcional de crecimiento de Telegram
 
 Se amplió PLAN_MEJORAS_TELEGRAM.md con selección jerárquica/masiva, pausas web, desvinculación, concurrencia web/bot y trazabilidad. Se revisaron código de envíos y esquema SQL versionado; no se midió carga ni se consultaron secretos o esquema productivo. Sin cambios de aplicación ni mensajes.
+
+## 2026-10-30 — Funciones de Telegram para muchos espacios
+
+TelegramPage.jsx añade filtros jerárquicos por ID, suscripciones actuales, acciones masivas con alcance explícito, deshacer local, estado efectivo, nodos activos, pausas, desvinculación e historial paginado. services.js incorpora las rutas personales nuevas; penpot.css adapta filtros y acciones. api/main.py añade TelegramPauseIn, telegram_pause, telegram_unlink y telegram_deliveries; el PUT de preferencias aplica diferencias e inserta por conjunto y detecta conflicto del interruptor global. PLAN_MEJORAS_TELEGRAM.md detalla límites y pendientes de crecimiento.
+
+Respaldo en C:\Users\corte\.codex\backups\aira-telegram-funciones-20261030-antes; etiqueta respaldo/telegram-funciones-20261030. Pruebas simuladas de diferencias, conflicto, duraciones y GUEST correctas; Python/build, ambos rollouts y salud correctos; 46 archivos web idénticos por SHA-256. Sin mensajes ni cambios reales de preferencias durante pruebas, sin migraciones. Revisión visual pendiente. La paginación del catálogo de salas sigue siendo local; historial usa servidor. No se implementaron reglas para salas futuras, horarios ni persistencia de fallos. Sin push.

@@ -1,5 +1,19 @@
 # Análisis de la página Telegram
 
+## Funciones implementadas sobre `3ae3598`
+
+La página incorpora filtros jerárquicos por IDs de sector/edificio/piso, vista de suscripciones/selección actual, selección de página o resultados, eliminación por resultados y deshacer cambios locales. Las acciones indican alcance y no abarcan salas futuras. Cada sala muestra nodos activos y estado efectivo de vínculo, activación y pausa. Se añadieron pausas/reanudación de 1/24 horas por grupo de suscripciones guardadas y desvinculación con confirmación. Pausar grupos requiere guardar antes los cambios locales y admite hasta 1000 IDs por solicitud. Sincronizar preferencias se habilita cuando no hay cambios locales.
+
+`TelegramPreferencesIn` admite selección base e interruptor base. El PUT aplica sólo altas/bajas respecto de esa base, realiza la inserción por conjunto y rechaza con 409 un cambio concurrente del interruptor global. Esto preserva suscripciones ajenas a la edición, pero no resuelve conflictos contradictorios sobre la misma sala ni constituye versionado completo del bot. La validación de acceso por sala sigue usando la regla existente.
+
+Nuevas rutas: `PUT /telegram/pausas`, `DELETE /telegram/vinculo` y `GET /telegram/envios?pagina=…`, todas personales y con rechazo de GUEST. El historial devuelve páginas de 20 éxitos del chat actualmente vinculado y edificios autorizados; no registra fallos ni confirma lectura. No hay migraciones ni dependencias nuevas. Backend modificado en `api/main.py`; frontend en `TelegramPage.jsx`, `services.js` y `penpot.css`.
+
+Respaldo de cuatro ConfigMaps y script con hashes: `C:\Users\corte\.codex\backups\aira-telegram-funciones-20261030-antes`, etiqueta `respaldo/telegram-funciones-20261030`. Ejecutar su `Restaurar.ps1` para volver a web/API anteriores y revertir el commit de código. Restaurar la aplicación no revierte desvinculaciones, suscripciones ni pausas guardadas.
+
+Pruebas con BD simulada verificaron altas/bajas por diferencias, conflicto de interruptor, duraciones y rechazo de invitado. Python compiló y Vite terminó. La revisión visual y las operaciones reales de vinculación/pausa quedan a cargo del usuario. No se enviaron mensajes ni se alteraron preferencias reales durante las pruebas.
+
+Pendientes explícitos del plan de crecimiento: paginar en servidor el catálogo completo de salas y evitar la validación individual con consultas por conjunto; registrar fallos/reintentos persistentes; definir horarios, resúmenes y reglas de salas futuras. Estas últimas requieren decisiones funcionales y migraciones, y no se habilitan implícitamente. No se ha medido carga real.
+
 ## Análisis funcional para crecimiento — 2026-10-30
 
 Revisión ampliada sobre `b063b34`: página, servicios, endpoints de preferencias, suscripciones/pausas del bot, envíos y SQL versionado en `contenido/base de datos/schema_timescaledb.sql` y migraciones. Sólo análisis estático; no se verificó el esquema productivo ni se midió carga. El esquema versionado ya define unicidad de `chatId` e índice por sala; no se debe proponer duplicarlos sin comparar producción.
