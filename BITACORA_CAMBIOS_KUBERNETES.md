@@ -191,3 +191,7 @@ La versión previa `dddca8a` quedó etiquetada `respaldo/espacios-tarjetas-20261
 - Los tres ConfigMaps web ignorados por Git se regeneraron desde el mismo build y se reemplazaron juntos.
 
 Base Git `f2b0653`, etiqueta `respaldo/espacios-modal-20261030`; respaldo de ConfigMaps, Deployment, hashes y `Restaurar.ps1` en `C:\Users\corte\.codex\backups\aira-espacios-modal-20261030-antes`. Dry run de restauración aceptado. Build correcto, rollout web completo, 45 archivos idénticos por SHA-256 y salud API `ok`. Sin cambios de API, permisos, esquema, datos ni dependencias. La revisión visual corresponde al usuario; no se hizo push.
+
+## 2026-10-30 — Análisis y plan de Nodos
+
+Se revisaron `NodesPage`, `NodeRoomSelect`, `NodeInventory`, estilos, servicios HTTP, esquemas Pydantic y endpoints de nodos, firmware y aprovisionamiento. `PLAN_MEJORAS_NODOS.md` documenta los problemas comprobados en código, las etapas propuestas, límites de medición, compatibilidad y restauración. Se detectó que el selector de sala consulta cuatro listas por cada nodo incluso si su pestaña está oculta con CSS. No se modificó ni desplegó la aplicación; no hubo operaciones sobre dispositivos ni datos.
