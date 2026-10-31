@@ -249,3 +249,7 @@ ANALISIS_COHERENCIA_TELEGRAM.md revisa significados, duplicaciones y comportamie
 ## 2026-10-30 — Coherencia de estados y flujo Telegram
 
 TelegramPage.jsx separa selección guardada y borrador, descarta consultas antiguas de vínculo e historial, actualiza vencimientos, permite recuperar conflictos sin pérdida implícita y añade pausas individuales. Historial carga al abrir; se retiran repeticiones globales y código inaccesible de revinculación. penpot.css consolida estilos de Telegram. api/main.py devuelve fecha y referencia parcial de cuenta propia. ANALISIS_COHERENCIA_TELEGRAM.md documenta alcance y pendientes. Respaldo C:\Users\corte\.codex\backups\aira-telegram-coherencia-20261030-antes. Python/build y prueba simulada de preferencias/roles correctos; ambos rollouts completos, API ok. Sin mensajes ni escrituras de prueba; revisión visual pendiente. Paginación servidor del catálogo y versionado completo del bot siguen pendientes.
+
+## 2026-10-30 — Análisis de Histórico
+
+PLAN_MEJORAS_HISTORICO.md documenta perímetro de filtros, gráficos, tablas, API y exportación. Se identifican divergencia entre filtros y consulta aplicada, límite silencioso de 10000 filas, tabla de 80 sin paginación, variables inaccesibles si CO2 está vacío y riesgos de consultas antiguas. Plan en dos etapas con validación y reversión. Sólo documentación, sin cambios de aplicación ni datos.
