@@ -1,12 +1,14 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeft,CircleAlert,KeyRound,Pencil,Plus,RefreshCw,Trash2,X} from 'lucide-react';
-import {Link} from 'react-router-dom';
+import {Link,useSearchParams} from 'react-router-dom';
 import {api} from './services';
 import {formatDate} from './domain';
 import CascadeSelect from './CascadeSelect';
 import NodeListControls,{filterNodes,NodePages} from './NodeListControls';
 
 export default function NodeInventory(){
+ const [searchParams,setSearchParams]=useSearchParams();
+ const requestedNode=searchParams.get('nodo');
  const [nodes,setNodes]=useState([]),[rooms,setRooms]=useState([]),[busy,setBusy]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState(''),[dialog,setDialog]=useState(null),[deleteNode,setDeleteNode]=useState(null),[locations,setLocations]=useState({sectores:[],edificios:[],pisos:[],salas:[]});
  const [refreshing,setRefreshing]=useState(false),[pending,setPending]=useState(false),[dialogError,setDialogError]=useState(''),[confirm,setConfirm]=useState(''),[query,setQuery]=useState(''),[stateFilter,setStateFilter]=useState(''),[roomFilter,setRoomFilter]=useState(''),[page,setPage]=useState(1);const lock=useRef(false);
  const filtered=filterNodes(nodes,query,stateFilter,roomFilter),currentPage=Math.min(page,Math.max(1,Math.ceil(filtered.length/20)));
@@ -15,6 +17,15 @@ export default function NodeInventory(){
   * Salida: nodos y ubicaciones o error. Efectos: dos consultas API. */
  async function reload(){setRefreshing(true);try{const [n,places]=await Promise.all([api.nodes(),api.spacesSummary()]);setNodes(n);setRooms(places.salas);setLocations(places);setError('')}catch(e){setError(e.message)}finally{setBusy(false);setRefreshing(false)}}
  useEffect(()=>{reload()},[]);
+ /** Nombre: abrir nodo solicitado. Razón: llegar desde Espacios al dispositivo elegido.
+  * Entradas: ID en URL y lista autorizada de nodos. Salida: edición o aviso. Efectos: consume parámetro de navegación. */
+ useEffect(()=>{
+  if(!requestedNode||busy||refreshing||error)return;
+  const node=nodes.find(item=>item.id===requestedNode);
+  if(node){setQuery(node.id);setStateFilter('');setRoomFilter('');setPage(1);setDialogError('');setDialog({node})}
+  else setError('El nodo solicitado ya no está disponible. Actualiza el listado.');
+  const next=new URLSearchParams(searchParams);next.delete('nodo');setSearchParams(next,{replace:true});
+ },[requestedNode,busy,refreshing,error,nodes,searchParams,setSearchParams]);
  /**
   * Nombre: openRetireDialog. Razón: evita consultar el historial de cada nodo al cargar la tabla.
   * Entradas: node proviene del nodo seleccionado en la lista.
