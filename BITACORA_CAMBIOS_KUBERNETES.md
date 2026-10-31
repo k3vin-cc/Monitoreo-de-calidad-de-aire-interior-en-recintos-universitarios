@@ -263,3 +263,7 @@ Respaldo C:\Users\corte\.codex\backups\aira-historico-20261030-antes, etiqueta r
 ## 2026-10-30 — Filtro compacto de Histórico
 
 HistoryRoomPicker.jsx reúne búsqueda y elección de sala con ruta, teclado y cierre; HistoryPage.jsx usa un único selector de período con fechas sólo en Personalizado y recalcula rangos relativos al consultar. penpot.css define una fila compacta adaptable. PLAN_MEJORAS_HISTORICO.md documenta inspiración USWDS, respaldo y límites de validación. Respaldo C:\Users\corte\.codex\backups\aira-historico-filtro-20261030-antes. Render inicial y homónimos, build, rollout y API correctos; archivos publicados idénticos. Sin cambios de datos/API. Revisión visual pendiente.
+
+## 2026-10-30 — Mejoras de Mi perfil
+
+`web/src/ui.jsx` separa información personal y seguridad, revela los campos de contraseña al solicitarlos, añade descarte/restauración de cambios y estados de permisos; evita consultar edificios al rol ADMIN. `web/src/penpot.css` añade estilos adaptables aislados de Perfil. `PLAN_MEJORAS_PERFIL.md` describe perímetro, comportamiento y restauración. Sin cambios de API, autenticación, permisos efectivos, datos o dependencias. Respaldo de los tres ConfigMaps web, hashes y `Restaurar.ps1` en `C:\Users\corte\.codex\backups\aira-perfil-20261030-antes`; etiqueta previa `respaldo/perfil-20261030`. Build correcto, rollout web completo, salud de API `ok` y 48 archivos publicados idénticos por SHA-256. La revisión visual corresponde al usuario.
