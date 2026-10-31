@@ -1,5 +1,13 @@
 # Análisis de la página Telegram
 
+## Simplificación tras revisión del usuario
+
+El usuario confirmó que la regla es una sola cuenta de Telegram por usuario. El esquema versionado ya usa usuarioId como clave primaria del vínculo y chatId único; no se añadió otra relación con nodos ni se intentó identificar teléfonos físicos. La página muestra la cuenta vinculada por su nombre público cuando existe, oculta las instrucciones de alta mientras está vinculada y ofrece Desvincular. Se retiró el acceso visible a revincular directamente.
+
+La búsqueda principal quedó como un campo por sala/edificio y la opción «Mostrar sólo mis salas». Sector/edificio/piso se agrupan en «Filtrar por ubicación», cerrado inicialmente. Las acciones masivas y pausas se agrupan en otra sección desplegable; el historial también inicia cerrado. Botones de ancho natural y tamaño compacto en escritorio, con áreas táctiles mayores en móvil. Se conservan las selecciones, validaciones y APIs existentes.
+
+Respaldo web previo: `C:\Users\corte\.codex\backups\aira-telegram-simplificacion-20261030-antes`, etiqueta `respaldo/telegram-simplificacion-20261030`. Restaurar mediante su `Restaurar.ps1` y revertir el commit del ajuste visual si se requiere. No cambia vínculos ni preferencias guardadas. La verificación visual corresponde al usuario.
+
 ## Funciones implementadas sobre `3ae3598`
 
 La página incorpora filtros jerárquicos por IDs de sector/edificio/piso, vista de suscripciones/selección actual, selección de página o resultados, eliminación por resultados y deshacer cambios locales. Las acciones indican alcance y no abarcan salas futuras. Cada sala muestra nodos activos y estado efectivo de vínculo, activación y pausa. Se añadieron pausas/reanudación de 1/24 horas por grupo de suscripciones guardadas y desvinculación con confirmación. Pausar grupos requiere guardar antes los cambios locales y admite hasta 1000 IDs por solicitud. Sincronizar preferencias se habilita cuando no hay cambios locales.
