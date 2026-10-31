@@ -1,5 +1,29 @@
 # Análisis de la página Telegram
 
+## Análisis funcional para crecimiento — 2026-10-30
+
+Revisión ampliada sobre `b063b34`: página, servicios, endpoints de preferencias, suscripciones/pausas del bot, envíos y SQL versionado en `contenido/base de datos/schema_timescaledb.sql` y migraciones. Sólo análisis estático; no se verificó el esquema productivo ni se midió carga. El esquema versionado ya define unicidad de `chatId` e índice por sala; no se debe proponer duplicarlos sin comparar producción.
+
+### Funciones prioritarias
+
+1. Explorar sectores → edificios → pisos → salas con selección por grupo, estado parcial y contadores. Mantener búsqueda general y vista «Mis suscripciones». Los nodos serían contexto operativo dentro de una sala: el modelo actual suscribe salas, por lo que incluir o reemplazar un nodo no debe cambiar silenciosamente qué ubicación se vigila.
+2. Selección masiva explícita: seleccionar página, resultados filtrados o todas las salas autorizadas del grupo. Mostrar el alcance antes de guardar y permitir deshacer cambios locales. La primera versión debe seleccionar salas existentes; suscripción automática a futuras salas exige reglas persistentes nuevas y decisiones sobre excepciones y pérdida de permisos.
+3. Pausar/reanudar por sala o grupo desde la web, con vencimiento visible. El bot ya ofrece pausas de una y 24 horas mediante `pausadoHasta`; reutilizar esa regla con endpoints autorizados. Distinguir vínculo, interruptor global, suscripción y pausa para explicar por qué una sala no enviaría avisos.
+4. Desvincular con confirmación y cancelación de códigos pendientes; después mostrar un estado verificable. Hoy sólo existe generación/revinculación. Añadir acceso al bot usando un nombre público verificado, nunca inventado. Una prueba de mensaje sería una acción explícita del usuario, limitada en frecuencia y registrada sin contenido sensible.
+5. Historial personal de intentos de aviso, con fecha, sala, tipo y resultado. `telegram_avisos_enviados` registra éxitos por alerta/chat/tipo, pero no todos los fallos ni una garantía de lectura por el destinatario. Registrar fallos sanitizados y reintentos antes de prometer trazabilidad completa. ADMIN podría ver salud del servicio; cada usuario sólo sus entregas autorizadas.
+
+### Problemas de escala y coherencia
+
+- La paginación es local: se descargan todas las salas y suscripciones. El guardado valida cada sala por separado y hace una inserción por selección, por lo que aumenta el número de consultas. Medir y evolucionar a búsqueda/páginas en servidor y validación/escritura por conjuntos, manteniendo autorización y transacción.
+- PUT reemplaza la selección completa y no controla versión. Una pestaña antigua puede borrar suscripciones cambiadas desde el bot o desde otra pestaña. Añadir control de concurrencia o actualizaciones explícitas por diferencias y respuesta 409 para conflictos; mostrar cómo recargar o revisar los cambios.
+- El refresco web sólo actualiza el vínculo, no la lista ni pausas. Debe detectar cambios externos sin sobrescribir edición local. Al guardar, usar una instantánea consistente; el estado de vínculo y avisos también debe evitar carreras entre consultas y mutaciones.
+- Los avisos se agrupan por sala/ventana, pero no existe configuración de resumen entre salas, horario silencioso o severidad mínima por usuario. Son opciones posteriores con reglas explícitas; no cambiar detección ni resolución de alertas para reducir mensajes. Si se crean alertas operativas de nodo desconectado, definir umbral y recuperación aparte de alertas ambientales.
+- El bot procesa avisos y consultas en el mismo ciclo de polling y envía a destinatarios en secuencia; mayor volumen puede retrasar la interacción. Medir duración, errores y pendientes; preparar envío con límite de concurrencia, tratamiento de rechazo temporal y reintentos persistentes si la evidencia lo exige. Persistir el offset de actualizaciones para evitar reprocesar tras reinicio. No introducir infraestructura nueva sin necesidad medida.
+
+### Entrega recomendada
+
+Lote 1: navegación jerárquica, Mis suscripciones, selección masiva de salas actuales, resumen de estado efectivo y protección de cambios locales. Lote 2: pausas web, desvinculación y control de concurrencia con el bot. Lote 3: paginación/operaciones por conjuntos en servidor y trazabilidad de envíos. Lote 4: reglas para futuras salas, horarios y resúmenes sólo tras definir su semántica. Cada lote requiere respaldo, revisión de permisos, pruebas con volumen simulado y aprobación previa de cambios estructurales; no se modificó la aplicación durante este análisis.
+
 Fecha: 2026-10-30. Base: `8065e1a`. Estado: análisis de código; sin cambios de aplicación ni mensajes enviados.
 
 ## Implementación autorizada

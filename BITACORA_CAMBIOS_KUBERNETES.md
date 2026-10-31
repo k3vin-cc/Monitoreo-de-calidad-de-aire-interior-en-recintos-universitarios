@@ -219,3 +219,7 @@ Se documentó en PLAN_MEJORAS_TELEGRAM.md el perímetro frontend/backend, vincul
 ## 2026-10-30 — Mejoras de Telegram aplicadas
 
 TelegramPage.jsx separa la página de ui.jsx y añade comando copiable, vencimiento, confirmación de vínculo, protección de operaciones y selección de salas con búsqueda/páginas. penpot.css adapta sus controles. api/main.py añade TelegramPreferencesIn estricto, filtrado de permisos actuales, códigos no almacenables en caché y espera de 30 segundos entre generaciones; revincular desactiva avisos explícitamente. PLAN_MEJORAS_TELEGRAM.md documenta alcance y límites. Respaldo de web/API y restauración en C:\Users\corte\.codex\backups\aira-telegram-20261030-antes; etiqueta respaldo/telegram-20261030. Python, build, rechazo de booleanos ambiguos y GUEST correctos; ambos rollouts completos, salud ok y 46 archivos web idénticos. Sin mensajes, códigos reales ni escrituras de prueba. Validación visual y vinculación completa pendientes. Sin cambios de esquema ni dependencias. Sin push.
+
+## 2026-10-30 — Análisis funcional de crecimiento de Telegram
+
+Se amplió PLAN_MEJORAS_TELEGRAM.md con selección jerárquica/masiva, pausas web, desvinculación, concurrencia web/bot y trazabilidad. Se revisaron código de envíos y esquema SQL versionado; no se midió carga ni se consultaron secretos o esquema productivo. Sin cambios de aplicación ni mensajes.
