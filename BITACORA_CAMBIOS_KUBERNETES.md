@@ -153,3 +153,7 @@ Sin cambios de esquema, API, permisos ni dependencias. El backend transaccional 
 ## 2026-10-30 — Retiro del aviso de roles en Usuarios
 
 Se eliminó de `web/src/PenpotUsers.jsx` el bloque «Acceso controlado por rol y ubicación» y el icono que sólo se utilizaba en ese bloque. Se retiraron sus reglas CSS específicas en `web/src/penpot.css`. No cambia permisos, endpoints ni operaciones de cuenta. Build Vite correcto; se reemplazaron los tres ConfigMaps y el rollout de web completó. La búsqueda en los assets servidos confirmó que el texto ya no está y `/api/healthz` respondió `ok`.
+
+## 2026-10-30 — Análisis de mejoras de Espacios
+
+Se revisaron `LocationsAdmin`, `CascadeSelect`, estilos, servicios HTTP, esquemas Pydantic, endpoints y operación de retiro. El análisis, prioridades y reversión están en `PLAN_MEJORAS_ESPACIOS.md`. No se modificó ni desplegó la aplicación. La comprobación visual y la medición de rendimiento quedan pendientes de la etapa de implementación.
