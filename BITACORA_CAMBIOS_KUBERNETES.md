@@ -157,3 +157,11 @@ Se eliminó de `web/src/PenpotUsers.jsx` el bloque «Acceso controlado por rol y
 ## 2026-10-30 — Análisis de mejoras de Espacios
 
 Se revisaron `LocationsAdmin`, `CascadeSelect`, estilos, servicios HTTP, esquemas Pydantic, endpoints y operación de retiro. El análisis, prioridades y reversión están en `PLAN_MEJORAS_ESPACIOS.md`. No se modificó ni desplegó la aplicación. La comprobación visual y la medición de rendimiento quedan pendientes de la etapa de implementación.
+
+## 2026-10-30 — Mejoras de Espacios implementadas
+
+- `web/src/LocationsAdmin.jsx`: bloqueo de escritura, errores dentro de diálogos, confirmación escrita para borrar historial y diálogo nativo con control de foco. Tabla con nombre, jerarquía e ID secundario; búsqueda con mapas por ID y refresco sin ocultar la tabla. `reload`, `submit`, `remove`, `openRetireDialog` y las filas/diálogos fueron modificados; `LocationDialog` fue agregado y documentado.
+- `web/src/penpot.css`: tamaños, foco, diálogo, tabla y controles de Espacios, limitados al componente.
+- `PLAN_MEJORAS_ESPACIOS.md`: implementación, respaldo y restauración concretos.
+
+Base Git `c482077`, etiqueta `respaldo/espacios-20261030`; ConfigMaps y Deployment web anteriores guardados fuera de Git en `C:\Users\corte\.codex\backups\aira-espacios-20261030-antes`. Sintaxis del script `Restaurar.ps1` y reemplazo simulado de los tres ConfigMaps correctos. Build Vite correcto; los tres ConfigMaps actuales se reemplazaron antes de reiniciar web; rollout completo, 45 assets iguales por SHA-256 y salud API `ok`. Sin cambios de base de datos, API, rutas, permisos ni dependencias. No se hicieron mutaciones de espacios ni se midió rendimiento real. Revisión visual del usuario pendiente. Restaurar la web no recupera datos borrados por operaciones posteriores.

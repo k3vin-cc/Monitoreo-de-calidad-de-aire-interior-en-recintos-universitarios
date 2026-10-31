@@ -1,6 +1,6 @@
 # Análisis y plan de mejoras de Espacios
 
-Fecha: 2026-10-30. Estado: análisis de código, sin implementación. La revisión visual corresponderá al usuario. Base de comparación: `9c3bebb`.
+Fecha: 2026-10-30. Estado: mejoras de interfaz desplegadas; revisión visual pendiente del usuario. Base de código anterior: `c482077` (la aplicación era equivalente a `9c3bebb`).
 
 ## Perímetro revisado
 
@@ -52,4 +52,20 @@ Restaurar código o ConfigMaps no recupera espacios retirados ni mediciones/aler
 
 ## Compatibilidad y decisión pendiente
 
-La primera etapa mantiene rutas, roles, formatos de respuesta y esquema de base de datos. Cambiar el contenido del mensaje de retiro y el orden visual de la tabla afecta la presentación, no los permisos. Optimizar SQL o cambiar la API requiere medición y revisión separada. Este documento propone los cambios; no modifica la aplicación.
+La primera etapa mantiene rutas, roles, formatos de respuesta y esquema de base de datos. Cambiar el contenido del mensaje de retiro y el orden visual de la tabla afecta la presentación, no los permisos. Optimizar SQL o cambiar la API requiere medición y revisión separada.
+
+## Implementación y recuperación preparada
+
+Se aplicaron cambios de interfaz en `web/src/LocationsAdmin.jsx` y CSS acotado a `.locationsAdmin` en `web/src/penpot.css`. Guardado y retiro bloquean duplicados y cierre durante la petición; los errores permanecen dentro del diálogo. Los diálogos nativos contienen el foco y lo devuelven al control inicial. La tabla permanece visible al refrescar, prioriza nombre y jerarquía, muestra el ID debajo y usa mapas por ID para el filtro. Borrar historial exige escribir exactamente el nombre de la ubicación. No se cambió backend, esquema, roles ni contratos HTTP.
+
+Antes de editar se creó la etiqueta `respaldo/espacios-20261030` sobre `c482077`. Los tres ConfigMaps web y el Deployment anterior quedaron en `C:\Users\corte\.codex\backups\aira-espacios-20261030-antes`, con hashes y `Restaurar.ps1`. Se validaron sintaxis del script y ConfigMaps con `kubectl replace --dry-run=server`.
+
+Para restaurar exactamente la web anterior:
+
+```powershell
+& 'C:\Users\corte\.codex\backups\aira-espacios-20261030-antes\Restaurar.ps1'
+```
+
+El script comprueba contexto y hashes, reemplaza juntos los tres ConfigMaps y reinicia web sólo después de completar los reemplazos. Después se comprobarán rollout, salud y hashes de los archivos publicados. Para revertir código se creará un commit que deshaga sólo Espacios.
+
+Build Vite correcto; los tres ConfigMaps nuevos se reemplazaron y el rollout de `calidad-web` terminó. Los 45 archivos publicados coincidieron con `web/dist` por SHA-256 y `/api/healthz` respondió `ok`. No hubo operaciones sobre espacios reales ni medición de rendimiento; la revisión visual queda a cargo del usuario. Restaurar la interfaz no recupera datos históricos eliminados después.
