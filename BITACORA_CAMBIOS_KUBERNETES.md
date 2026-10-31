@@ -241,3 +241,7 @@ penpot.css corrige herencia de ancho/alto de campos de texto sobre checkboxes: c
 ## 2026-10-30 — Etiqueta de suscripciones de Telegram
 
 TelegramPage.jsx sustituye Mostrar sólo mis salas por Sólo salas seleccionadas para recibir avisos. El filtro afecta selección de notificaciones, no permisos: ADMIN ve todas las salas y otros usuarios su ámbito autorizado. Build y rollout correctos; API ok. Sin cambios de comportamiento, permisos o datos; reversión mediante este commit.
+
+## 2026-10-30 — Revisión integral de coherencia de Telegram
+
+ANALISIS_COHERENCIA_TELEGRAM.md revisa significados, duplicaciones y comportamiento real de controles; identifica mezcla de borrador/estado guardado, acciones inmediatas, respuestas obsoletas, recuperación de conflictos y límites de escala. Propone una interfaz única y criterios de aceptación. Sólo documentación; sin cambios de aplicación o mensajes.
