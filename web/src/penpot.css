@@ -123,7 +123,7 @@
 .telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
 .telegramPage button { min-height:34px; width:auto; max-width:100%; padding:7px 12px; font-size:13px; align-self:flex-start; }
 .telegramPage .inlineActions { flex-wrap:wrap; gap:8px; }
-.telegramPage .telegramGrid { grid-template-columns:minmax(240px,.65fr) minmax(0,1.35fr); }
+.telegramPage .telegramGrid { grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; }
 .telegramPage .telegramGrid > section { min-width:0; }
 .telegramPage .telegramHistory { grid-column:1/-1; }
 .telegramPage summary { cursor:pointer; color:#006da4; font-size:13px; font-weight:700; padding:6px 0; }
@@ -133,6 +133,23 @@
 .telegramPage .telegramBulk { padding:10px 12px; }
 .telegramPage .telegramBulk[open] summary { margin-bottom:12px; }
 .telegramPage .telegramRooms .checkRow { padding:10px 12px; }
+/* Los estilos de campos de texto no deben estirar las casillas de Telegram. */
+.telegramPage .stack input[type="checkbox"] { appearance:auto; width:17px; height:17px; min-width:17px; min-height:17px; flex:0 0 17px; padding:0; margin:2px 0; align-self:center; }
+.telegramPage .stack > label.checkRow { flex-direction:row; justify-content:flex-start; align-items:center; border:0; padding:0; font-weight:400; }
+.telegramPage .stack > label.toggleRow { padding:12px 14px; background:#f5f9fc; border:0; }
+.telegramPage .stack > label.toggleRow > span { flex:1; }
+.telegramPage .telegramRooms .checkRow { display:flex; flex-direction:row; align-items:flex-start; gap:12px; border:0; border-bottom:1px solid #e4edf2; border-radius:0; padding:12px 4px; }
+.telegramPage .telegramRooms .checkRow > input[type="checkbox"] { align-self:flex-start; margin-top:3px; }
+.telegramPage .telegramRooms small { font-size:12px; color:#5f7889; }
+.telegramPage .telegramAdvanced,.telegramPage .telegramBulk { border:0; border-top:1px solid #e4edf2; background:transparent; border-radius:0; padding:10px 0; }
+.telegramPage .telegramBulk button,.telegramPage .telegramHistory button { border:1px solid #d8e3ec; background:#fff; color:#37586c; border-radius:7px; font-weight:600; }
+.telegramPage .stack > p { margin:0; font-size:13px; }
+.telegramPage .telegramAccount { display:inline-block; padding:8px 16px; vertical-align:middle; }
+.telegramPage .panel h2 { font-size:18px; margin-bottom:14px; }
+.telegramPage .telegramHistory { background:#f8fbfd; }
+.telegramPage .telegramSaveBar { display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid #d8e3ec; padding-top:16px; }
+.telegramPage .telegramSaveBar p { margin:0; color:#5f7889; font-size:12px; }
+.telegramPage .telegramSaveBar button { flex:none; }
 @media(max-width:760px) { .telegramPage .telegramGrid { grid-template-columns:1fr; } .telegramPage button { min-height:40px; } }
 .nodeFilters { display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; margin:18px 0; }
 .nodeFilters label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:#506b7b; min-width:0; }

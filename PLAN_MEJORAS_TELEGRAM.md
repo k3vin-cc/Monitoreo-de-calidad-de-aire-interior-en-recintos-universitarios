@@ -1,5 +1,9 @@
 # Análisis de la página Telegram
 
+## Corrección de distribución y controles
+
+Tras otra revisión del usuario se identificó que `.stack > label input` y `.stack input` daban a los checkboxes ancho completo y altura de campo de texto. Se añadieron reglas específicas para casillas de Telegram de 17 px y disposición horizontal. La página usa una columna de ancho máximo 1050 px: cuenta, salas/notificaciones e historial. Las salas son filas con separadores, las acciones secundarias pierden fondo destacado y Guardar queda en una barra final con el estado de cambios. Cambios en `TelegramPage.jsx` y `penpot.css`, sin API ni datos. Respaldo web `C:\Users\corte\.codex\backups\aira-telegram-orden-20261030-antes`, etiqueta `respaldo/telegram-orden-20261030`; restauración mediante su script y reversión del commit. Build y rollout correctos; salud API `ok`. Presentación visual pendiente del usuario.
+
 ## Simplificación tras revisión del usuario
 
 El usuario confirmó que la regla es una sola cuenta de Telegram por usuario. El esquema versionado ya usa usuarioId como clave primaria del vínculo y chatId único; no se añadió otra relación con nodos ni se intentó identificar teléfonos físicos. La página muestra la cuenta vinculada por su nombre público cuando existe, oculta las instrucciones de alta mientras está vinculada y ofrece Desvincular. Se retiró el acceso visible a revincular directamente.
