@@ -1,5 +1,11 @@
 # Análisis y plan de Histórico
 
+## Simplificación del filtro
+
+La revisión del usuario motivó sustituir búsqueda más select por `HistoryRoomPicker`: un campo permite buscar y seleccionar, mostrando ruta para distinguir salas homónimas. Incluye opciones cerradas inicialmente, flechas/Enter/Escape, cierre al salir y un máximo visible de 50 coincidencias con aviso para acotar. El período pasa a un select único (24 h, 7 días, 30 días, personalizado); sólo Personalizado muestra Desde/Hasta. Los rangos rápidos se calculan al consultar, no al abrir la página. La consulta aplicada y exportaciones conservan su coherencia. Inspiración: USWDS Combo box (https://designsystem.digital.gov/components/combo-box/), sin añadir librerías.
+
+Archivos: `HistoryPage.jsx`, nuevo `HistoryRoomPicker.jsx` y CSS aislado en `penpot.css`. Prueba de render inicial con selección y salas homónimas correcta; build y rollout correctos, API `ok`. Teclado e interacción visual completos pendientes del usuario. Respaldo web en `C:\Users\corte\.codex\backups\aira-historico-filtro-20261030-antes`, etiqueta `respaldo/historico-filtro-20261030`; restaurar con su script y revertir el commit de esta etapa. Sin API, permisos ni datos modificados.
+
 ## Primera etapa implementada
 
 Base de implementación `b639876`. `web/src/HistoryPage.jsx` separa la página y recibe gráfico/tabla compartidos. Consulta salas autorizadas una vez con búsqueda por ruta completa, rango inicial de 24 horas, accesos de 7/30 días y zona del navegador indicada. El detalle de sala transmite su ID a Histórico. Filtros y consulta aplicada tienen estados separados; exportar siempre usa esta última. Se distingue estado inicial, carga, error y ausencia de datos; se conserva la consulta previa al editar filtros o fallar una petición.

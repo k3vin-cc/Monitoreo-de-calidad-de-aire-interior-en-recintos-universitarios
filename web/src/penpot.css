@@ -108,6 +108,22 @@
 .historyPage { display:grid; gap:18px; }
 .historyPage .pageHeading { margin-bottom:0; }
 .historyPage .historyFilters { display:grid; grid-template-columns:1fr 2fr; gap:14px; }
+.historyPage .historyToolbar { display:grid; grid-template-columns:minmax(250px,2fr) minmax(180px,1fr) auto; gap:14px; align-items:start; }
+.historyPage .historyToolbar > button { margin-top:23px; }
+.historyPage .historyDates { margin-top:14px; }
+.historyPage .historyRoomPicker { position:relative; min-width:0; }
+.historyPage .historyRoomPicker > label { margin-bottom:6px; }
+.historyPage .historyRoomInput { display:flex; border:1px solid #b5c8d5; border-radius:8px; background:#fff; }
+.historyPage .historyRoomInput input { border:0; background:transparent; }
+.historyPage .historyRoomInput button { flex:none; border:0; background:transparent; padding:0 12px; color:#506b7b; }
+.historyPage .historyRoomPicker small { display:block; font-size:11px; color:#5f7889; line-height:1.5; margin-top:4px; }
+.historyPage .historyRoomOptions { position:absolute; z-index:10; top:66px; left:0; right:0; border:1px solid #b5c8d5; border-radius:9px; background:#fff; box-shadow:0 8px 24px #1c3e5620; }
+.historyPage .historyRoomOptions ul { list-style:none; margin:0; padding:5px; max-height:270px; overflow:auto; }
+.historyPage .historyRoomOptions li { padding:9px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+.historyPage .historyRoomOptions li:hover,.historyPage .historyRoomOptions li.active { background:#eaf5fa; }
+.historyPage .historyRoomOptions li[aria-selected="true"] { color:#006da4; }
+.historyPage .historyRoomOptions p { margin:10px; font-size:12px; }
+@media(max-width:760px) { .historyPage .historyToolbar { grid-template-columns:1fr; } .historyPage .historyToolbar > button { margin-top:0; } }
 .historyPage .historyDates { display:grid; grid-template-columns:1fr 1fr auto; align-items:end; gap:14px; }
 .historyPage label { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#506b7b; font-weight:700; min-width:0; }
 .historyPage input,.historyPage select { width:100%; min-width:0; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; }
