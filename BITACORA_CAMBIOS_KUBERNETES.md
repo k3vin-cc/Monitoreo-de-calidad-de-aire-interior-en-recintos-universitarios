@@ -149,3 +149,7 @@ Antes de editar se creó la etiqueta local `respaldo/usuarios-20261030` sobre `9
 Build Vite correcto y prueba HTTP simulada correcta para mensajes 422, PATCH, envío de cookies y JSON. Se reemplazaron los tres ConfigMaps web, comprobando éxito antes de reiniciar. Rollout completo, 45 archivos idénticos por SHA-256, todos los assets disponibles por HTTP y salud API `ok`. No se escribieron cuentas reales ni se realizaron pruebas visuales; la revisión visual queda a cargo del usuario.
 
 Sin cambios de esquema, API, permisos ni dependencias. El backend transaccional pertenece al segundo lote posterior a la revisión visual. La reversión del frontend restaura archivos publicados; no deshace operaciones guardadas sobre usuarios. Push pendiente de autorización.
+
+## 2026-10-30 — Retiro del aviso de roles en Usuarios
+
+Se eliminó de `web/src/PenpotUsers.jsx` el bloque «Acceso controlado por rol y ubicación» y el icono que sólo se utilizaba en ese bloque. Se retiraron sus reglas CSS específicas en `web/src/penpot.css`. No cambia permisos, endpoints ni operaciones de cuenta. Build Vite correcto; se reemplazaron los tres ConfigMaps y el rollout de web completó. La búsqueda en los assets servidos confirmó que el texto ya no está y `/api/healthz` respondió `ok`.
