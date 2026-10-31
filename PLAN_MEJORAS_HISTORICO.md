@@ -1,5 +1,17 @@
 # Análisis y plan de Histórico
 
+## Primera etapa implementada
+
+Base de implementación `b639876`. `web/src/HistoryPage.jsx` separa la página y recibe gráfico/tabla compartidos. Consulta salas autorizadas una vez con búsqueda por ruta completa, rango inicial de 24 horas, accesos de 7/30 días y zona del navegador indicada. El detalle de sala transmite su ID a Histórico. Filtros y consulta aplicada tienen estados separados; exportar siempre usa esta última. Se distingue estado inicial, carga, error y ausencia de datos; se conserva la consulta previa al editar filtros o fallar una petición.
+
+El resumen indica alcance y cantidad válida por variable; al alcanzar 10.000 filas se advierte que puede existir truncamiento. Tabla con páginas de 50 del subconjunto recibido. Exportación del rango completo con bloqueo de duplicados y estado pendiente. El gráfico compartido admite cinco variables incluso si la actual está vacía, muestra fecha/hora, elimina suavizado y separa huecos de más de cinco minutos y medio con nulos. El eje sigue siendo categórico y no representa distancias temporales proporcionales; una escala temporal real necesitaría diseño separado o soporte apropiado sin inventar precisión.
+
+`api/main.py` valida desde/hasta en telemetría y exportación y rechaza mezcla de fechas con/sin zona. No cambian roles ni protección CSV. Python/Vite correctos; prueba aislada de rango invertido, zonas inconsistentes, rango válido y protección CSV correcta sin BD. No se midió latencia ni se ejecutaron descargas reales grandes. La revisión visual y de interacción corresponde al usuario.
+
+Respaldo web/API con cuatro ConfigMaps, hashes y `Restaurar.ps1`: `C:\Users\corte\.codex\backups\aira-historico-20261030-antes`, etiqueta `respaldo/historico-20261030`. Ejecutar script para restaurar la publicación anterior y revertir commit de código de esta etapa. Sin cambios de esquema o datos.
+
+Pendiente segunda etapa: páginas/total/resumen del rango completo en servidor, agregación temporal y descarga JSON sin parsear todo en memoria. La lista de salas también se descarga completa; búsqueda actual es local. El aviso de límite es conservador: 10.000 filas no prueba que haya filas adicionales, por eso dice «podrían».
+
 Fecha: 2026-10-30. Base: `8ee89ed`. Sólo análisis estático; sin cambios de aplicación ni consultas de datos reales.
 
 ## Perímetro

@@ -253,3 +253,9 @@ TelegramPage.jsx separa selección guardada y borrador, descarta consultas antig
 ## 2026-10-30 — Análisis de Histórico
 
 PLAN_MEJORAS_HISTORICO.md documenta perímetro de filtros, gráficos, tablas, API y exportación. Se identifican divergencia entre filtros y consulta aplicada, límite silencioso de 10000 filas, tabla de 80 sin paginación, variables inaccesibles si CO2 está vacío y riesgos de consultas antiguas. Plan en dos etapas con validación y reversión. Sólo documentación, sin cambios de aplicación ni datos.
+
+## 2026-10-30 — Primera etapa de Histórico
+
+HistoryPage.jsx separa filtros y consulta aplicada, añade búsqueda de sala autorizada, períodos rápidos, zona visible, páginas de 50, resumen con conteos válidos y aviso de límite 10000. queryHistory evita respuestas obsoletas; download usa el rango aplicado y bloquea duplicados. ui.jsx carga Histórico diferido, transmite sala desde detalle y amplía TelemetryChart a cinco variables con nulos y huecos; conserva TelemetryTable para páginas. penpot.css incorpora estilos aislados. api/main.py valida orden y consistencia de zona de fechas en telemetría/exportación. PLAN_MEJORAS_HISTORICO.md documenta implementación y pendientes.
+
+Respaldo C:\Users\corte\.codex\backups\aira-historico-20261030-antes, etiqueta respaldo/historico-20261030. Python/build y pruebas aisladas de fechas/CSV correctos; ambos rollouts completos, API ok y 48 archivos idénticos por SHA-256. Sin escrituras ni esquema nuevo. Revisión visual pendiente; sin medición de latencia. Segunda etapa servidor y descarga de grandes rangos pendiente. Sin push.

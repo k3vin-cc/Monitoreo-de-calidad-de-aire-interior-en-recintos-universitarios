@@ -1864,6 +1864,11 @@ def sala_state_complements(salaId: str, user=Depends(allow_roles("ADMIN", "ANALI
 
 @app.get("/salas/{salaId}/telemetria")
 def room_telemetry(salaId: str, desde: datetime | None = None, hasta: datetime | None = None, limite: int = Query(1000, ge=1, le=10000), user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+    if desde and hasta:
+        if (desde.tzinfo is None) != (hasta.tzinfo is None):
+            raise HTTPException(422,"Usa fechas con la misma zona horaria")
+        if desde > hasta:
+            raise HTTPException(422,"La fecha inicial debe ser anterior a la fecha final")
     ensure_room_access(user, salaId)
     return fetch_all('''SELECT * FROM telemetria WHERE "salaId"=%s AND (%s::timestamptz IS NULL OR "timestamp">=%s::timestamptz)
         AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp" DESC LIMIT %s''', (salaId,desde,desde,hasta,hasta,limite))
@@ -1931,6 +1936,11 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
 
 @app.get("/salas/{salaId}/exportacion")
 def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: datetime | None = None, hasta: datetime | None = None, user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+    if desde and hasta:
+        if (desde.tzinfo is None) != (hasta.tzinfo is None):
+            raise HTTPException(422,"Usa fechas con la misma zona horaria")
+        if desde > hasta:
+            raise HTTPException(422,"La fecha inicial debe ser anterior a la fecha final")
     ensure_room_access(user, salaId)
     if formato == "json":
         return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="application/json")
