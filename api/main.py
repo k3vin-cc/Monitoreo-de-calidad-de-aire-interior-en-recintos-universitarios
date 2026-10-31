@@ -30,7 +30,7 @@ from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Re
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -149,6 +149,12 @@ class UserPatch(BaseModel):
     estado: Literal["activo", "inactivo"] | None = None
     password: str | None = Field(default=None, min_length=12, max_length=128)
     edificios: list[str] | None = None
+
+
+class TelegramPreferencesIn(BaseModel):
+    avisosActivos: StrictBool = False
+    salas: list[StrictStr] = Field(default_factory=list)
+    exportacion: StrictBool = False
 
 
 class FirmwarePatch(BaseModel):
@@ -899,7 +905,7 @@ async def telegram_handle_update(update: dict[str, Any]):
         parts = text.split(maxsplit=1)
         if len(parts) == 2:
             result = fetch_one('''UPDATE telegram_vinculos SET "chatId"=%s,"telegramUsername"=%s,
-                "chatVinculado"=TRUE,"codigoTemporal"=NULL,"codigoExpiraEn"=NULL,
+                "chatVinculado"=TRUE,"avisosActivos"=FALSE,"codigoTemporal"=NULL,"codigoExpiraEn"=NULL,
                 "vinculadoEn"=NOW(),"updatedAt"=NOW() WHERE "codigoTemporal"=%s AND "codigoExpiraEn">NOW()
                 AND EXISTS (SELECT 1 FROM usuarios u WHERE u.id="usuarioId" AND u.estado='activo' AND u.rol<>'GUEST')
                 RETURNING "usuarioId"''', (chat_id,(message.get("from") or {}).get("username"),parts[1]))
@@ -2336,12 +2342,16 @@ def delete_user(usuarioId: str, user=Depends(allow_roles("ADMIN"))):
 
 
 @app.post("/telegram/vinculo")
-def telegram_link(user=Depends(current_user)):
+def telegram_link(response: Response, user=Depends(current_user)):
+    response.headers["Cache-Control"] = "no-store"
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado es de solo lectura")
+    recent=fetch_one('SELECT 1 FROM telegram_vinculos WHERE "usuarioId"=%s AND "codigoExpiraEn">%s', (user["id"],datetime.now(timezone.utc)+timedelta(minutes=9,seconds=30)))
+    if recent:
+        raise HTTPException(429, "Espera 30 segundos antes de generar otro código")
     code=secrets.token_urlsafe(9)[:12]
     execute('''INSERT INTO telegram_vinculos ("usuarioId","codigoTemporal","codigoExpiraEn","chatVinculado","avisosActivos","updatedAt")
         VALUES (%s,%s,NOW()+INTERVAL '10 minutes',FALSE,FALSE,NOW()) ON CONFLICT ("usuarioId") DO UPDATE SET
-        "codigoTemporal"=EXCLUDED."codigoTemporal","codigoExpiraEn"=EXCLUDED."codigoExpiraEn","chatVinculado"=FALSE,"updatedAt"=NOW()''',(user["id"],code))
+        "codigoTemporal"=EXCLUDED."codigoTemporal","codigoExpiraEn"=EXCLUDED."codigoExpiraEn","chatVinculado"=FALSE,"avisosActivos"=FALSE,"updatedAt"=NOW()''',(user["id"],code))
     return {"codigo":code,"expiraEn":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),"botActivo":bool(os.getenv("TELEGRAM_BOT_TOKEN"))}
 
 
@@ -2349,21 +2359,25 @@ def telegram_link(user=Depends(current_user)):
 def get_telegram_preferences(user=Depends(current_user)):
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado no tiene preferencias personales")
     link=fetch_one('SELECT "chatVinculado","avisosActivos","telegramUsername" FROM telegram_vinculos WHERE "usuarioId"=%s',(user["id"],))
-    rooms=fetch_all('SELECT "salaId","pausadoHasta" FROM telegram_preferencias_salas WHERE "usuarioId"=%s ORDER BY "salaId"',(user["id"],))
+    rooms=fetch_all('''SELECT pref."salaId",pref."pausadoHasta" FROM telegram_preferencias_salas pref
+        JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
+        JOIN edificios ed ON ed.id=p."edificioId"
+        WHERE pref."usuarioId"=%s AND s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL
+        AND ed."retiradoEn" IS NULL AND (%s OR ed.id=ANY(%s::text[])) ORDER BY pref."salaId"''', (user["id"],user["rol"]=="ADMIN",user.get("assignedEdificios") or []))
     return {"vinculo":link,"salas":[r["salaId"] for r in rooms],
             "pausas":{r["salaId"]:r["pausadoHasta"].isoformat() for r in rooms if r["pausadoHasta"] and r["pausadoHasta"] > datetime.now(timezone.utc)}}
 
 
 @app.put("/telegram/preferencias")
-def put_telegram_preferences(body: dict[str,Any], user=Depends(current_user)):
+def put_telegram_preferences(body: TelegramPreferencesIn, user=Depends(current_user)):
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado es de solo lectura")
-    rooms=body.get("salas",[])
+    rooms=list(dict.fromkeys(body.salas))
     if not isinstance(rooms,list) or not all(isinstance(room,str) for room in rooms): raise HTTPException(422,"salas debe ser una lista de IDs")
     for room in rooms: ensure_room_access(user,room)
-    if user["rol"] not in ("ADMIN","ANALISTA") and body.get("exportacion"): raise HTTPException(403,"Exportación requiere rol ADMIN o ANALISTA")
+    if user["rol"] not in ("ADMIN","ANALISTA") and body.exportacion: raise HTTPException(403,"Exportación requiere rol ADMIN o ANALISTA")
     with db() as conn, conn.cursor() as cur:
         cur.execute('''INSERT INTO telegram_vinculos ("usuarioId","avisosActivos","updatedAt") VALUES (%s,%s,NOW())
-            ON CONFLICT ("usuarioId") DO UPDATE SET "avisosActivos"=EXCLUDED."avisosActivos","updatedAt"=NOW()''',(user["id"],bool(body.get("avisosActivos",False))))
+            ON CONFLICT ("usuarioId") DO UPDATE SET "avisosActivos"=EXCLUDED."avisosActivos","updatedAt"=NOW()''',(user["id"],body.avisosActivos))
         cur.execute('DELETE FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND NOT ("salaId"=ANY(%s::text[]))',(user["id"],rooms))
         for room in set(rooms):
             cur.execute('INSERT INTO telegram_preferencias_salas ("usuarioId","salaId") VALUES (%s,%s) ON CONFLICT DO NOTHING',(user["id"],room))

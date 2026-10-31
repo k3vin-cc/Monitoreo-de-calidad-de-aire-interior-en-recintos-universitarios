@@ -2,6 +2,16 @@
 
 Fecha: 2026-10-30. Base: `8065e1a`. Estado: análisis de código; sin cambios de aplicación ni mensajes enviados.
 
+## Implementación autorizada
+
+Aplicada sobre `d053b39`: `TelegramPage` se extrajo de `ui.jsx` a `web/src/TelegramPage.jsx`, cargado de forma diferida. Incluye comando copiable, vencimiento real, consulta de vínculo cada cinco segundos mientras el código está vigente, actualización manual y confirmación explícita de revinculación. Los controles de generación y guardado bloquean duplicados; errores y cambios sin guardar permanecen visibles. La búsqueda por sala/jerarquía y páginas de 20 mantienen selecciones. El catálogo de salas conserva la autorización del endpoint existente. La disponibilidad anunciada del bot sigue significando configuración presente, no prueba de conectividad.
+
+En `api/main.py` se añadió `TelegramPreferencesIn` con booleanos e IDs estrictos; se deduplican salas y se conserva validación de acceso. El GET filtra suscripciones por edificios autorizados y ubicaciones activas sin borrar datos. Generar o completar la revinculación desactiva avisos para coincidir con el mensaje del bot. Los códigos llevan `Cache-Control: no-store`; la generación rechaza otro código durante 30 segundos por usuario mediante su vencimiento almacenado. Esta comprobación no constituye un límite distribuido atómico frente a solicitudes simultáneas; no se añadieron índices ni restricciones de unicidad. Esas mejoras requieren revisar concurrencia y datos antes de una migración.
+
+Respaldo en `C:\Users\corte\.codex\backups\aira-telegram-20261030-antes`, etiqueta `respaldo/telegram-20261030`, con los cuatro ConfigMaps (tres web y API), ambos Deployments, hashes y `Restaurar.ps1`. Reemplazo simulado aceptado. Restaurar con ese script y comprobar rollout y salud; revertir este commit de código por separado. La restauración no revierte vínculos o preferencias guardadas.
+
+Python compiló y Vite terminó correctamente. Prueba aislada en runtime API verificó rechazo de booleanos ambiguos y GUEST en los tres endpoints sin tocar BD. Ambos rollouts completaron, la salud respondió `ok` y los 46 archivos web coincidieron por SHA-256. No se enviaron mensajes ni se generaron códigos reales. La vinculación completa, permisos por salas con cuentas reales y presentación móvil/escritorio quedan pendientes; el usuario hará la validación visual.
+
 ## Perímetro
 
 `TelegramPage` en `web/src/ui.jsx` usa `services.js`, `style.css`, `GET /telegram/preferencias`, `POST /telegram/vinculo`, `PUT /telegram/preferencias` y `GET /salas`. La ruta web admite ADMIN, ANALISTA y VIEWER; los endpoints personales rechazan GUEST. Las preferencias usan `telegram_vinculos` y `telegram_preferencias_salas`; el bot revisa usuarios activos y ámbito por edificios y consulta salas/estados/historial. Los envíos usan Telegram Bot API desde el backend, con token en configuración. La vinculación ocurre en chat privado mediante `/start CODIGO`; el código vence en diez minutos y se consume al vincular. Se revisaron también el manejador de mensajes, consultas de acceso, documentación del bot y script de pruebas existente. No se probó el servicio externo, no se inspeccionaron secretos ni se midieron tiempos.

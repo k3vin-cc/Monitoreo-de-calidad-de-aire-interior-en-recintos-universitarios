@@ -105,6 +105,16 @@
 @media (max-width: 760px) { .usersFilters { flex-direction: column; }.usersFilters label, .usersFilters select { width: 100%; }.usersSummary { grid-template-columns: 1fr; }.userDialog { padding: 18px; } }
 
 /* Navegación por dispositivos, firmware y USB. */
+.telegramPage .telegramGrid { align-items:start; margin-top:18px; }
+.telegramPage .notice { margin:12px 0; }
+.telegramPage ol { padding-left:22px; line-height:1.9; color:#506b7b; font-size:14px; }
+.telegramPage .stack label { font-size:14px; }
+.telegramPage input[type="search"] { min-height:44px; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:10px; }
+.telegramPage .telegramRooms { display:grid; gap:8px; }
+.telegramPage .telegramRooms .checkRow { padding:12px; border:1px solid #d8e3ec; border-radius:9px; align-items:flex-start; }
+.telegramPage .telegramRooms small { display:block; margin-top:5px; line-height:1.5; }
+.telegramPage .linkCode b { font-size:17px; letter-spacing:0; overflow-wrap:anywhere; }
+.telegramPage button { min-height:42px; }
 .nodeFilters { display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; margin:18px 0; }
 .nodeFilters label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; color:#506b7b; min-width:0; }
 .nodeFilters input,.nodeFilters select { min-height:44px; min-width:0; width:100%; border:1px solid #b5c8d5; border-radius:8px; padding:8px 10px; background:#fff; color:#24465b; }
