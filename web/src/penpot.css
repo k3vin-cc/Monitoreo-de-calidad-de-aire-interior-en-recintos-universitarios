@@ -354,6 +354,9 @@
 .profileSecurity .formGrid { grid-column: 1 / -1; width: 100%; }
 .profilePasswordField { position: relative; display: flex; width: 100%; align-items: center; }
 .profilePasswordField input { padding-right: 39px; }
+/* Edge añade un segundo ojo nativo sobre el control propio de Perfil. */
+.profilePasswordField input::-ms-reveal,
+.profilePasswordField input::-ms-clear { display: none; }
 .profilePasswordField .profileEye { position: absolute; right: 4px; width: 31px; height: 31px; padding: 0; color: #60798b; }
 .profilePasswordField .profileEye:hover { color: var(--deep); background: #edf5f8; }
 .profilePasswordMismatch { color: #a83131; font-size: 11px; }
