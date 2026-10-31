@@ -211,3 +211,7 @@ Corrección posterior a la captura del usuario: `web/src/penpot.css` elimina el 
 - `PLAN_MEJORAS_NODOS.md`: alcance aplicado, respaldo, restauración y límites de validación.
 
 Base `8befd96`, etiqueta `respaldo/nodos-20261030`; respaldo en `C:\Users\corte\.codex\backups\aira-nodos-20261030-antes`. Dry run de restauración aceptado, build correcto, tres ConfigMaps regenerados y reemplazados juntos, rollout completo, 45 assets idénticos por SHA-256 y API `ok`. Sin cambios de API, datos, roles o dependencias. Sin medición de latencia, escrituras reales o prueba física USB; revisión visual pendiente. La paginación es local. No se hizo push.
+
+## 2026-10-30 — Análisis de Telegram
+
+Se documentó en PLAN_MEJORAS_TELEGRAM.md el perímetro frontend/backend, vinculación, preferencias, avisos y acceso por rol. Se detectaron apertura de revinculación sin advertencia, estado web desactualizado, falta de búsqueda de salas y validación débil del booleano de avisos. No se modificó la aplicación, no se desplegó ni se enviaron mensajes. El plan incluye etapas, validación y reversión.
