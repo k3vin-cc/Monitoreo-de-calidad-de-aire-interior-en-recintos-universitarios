@@ -343,6 +343,8 @@
   .penpotUsers .usersModal .dialogActions button { flex: 1; min-height: 44px; }
 }
 
+/* Sin panel de alertas, el resumen de calidad ocupa todo el ancho disponible. */
+.dashboardLower.dashboardSolo { grid-template-columns: 1fr; }
 /* Perfil separa datos personales, permisos informativos y cambio de contraseña. */
 .profileFormPanel > .helper { margin: -4px 0 18px; }
 .profileFormPanel .formGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
