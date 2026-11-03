@@ -171,6 +171,10 @@ uint32_t bootSession             = 0;
 // Estado del cliente MQTTS / WSS (ESP-IDF esp_mqtt_client)
 esp_mqtt_client_handle_t mqttClient = nullptr;
 volatile bool mqttConnected      = false;
+unsigned long lastPresenceMs     = 0;
+uint32_t presenceSequence       = 0;
+volatile int presenceMsgId      = -1;
+volatile int presenceReplyMsgId = -1;
 volatile int  pendingMsgId       = -1;
 volatile bool pendingAckReceived = false;
 unsigned long pendingPublishAtMs = 0;
@@ -1109,13 +1113,51 @@ String getMqttTopic() {
   return "telemetria/" + cfg.nodoId + "/datos";
 }
 
+/**
+ * Nombre   : publishPresence
+ * Razón    : Informa que el programa sigue comunicándose sin esperar telemetría.
+ * Entradas : sesión y secuencia locales; identidad aprovisionada del nodo.
+ * Salida   : ninguna.
+ * Efectos  : publica una señal QoS 1; no toca LittleFS ni las mediciones.
+ */
+void publishPresence() {
+  if (!mqttConnected || mqttClient == nullptr || cfg.nodoId.isEmpty()) return;
+  char payload[32];
+  snprintf(payload, sizeof(payload), "%lu:%lu", static_cast<unsigned long>(bootSession),
+           static_cast<unsigned long>(++presenceSequence));
+  String topic = "presencia/" + cfg.nodoId + "/senal";
+  presenceMsgId = esp_mqtt_client_publish(mqttClient, topic.c_str(), payload, 0, 1, 0);
+  lastPresenceMs = millis();
+}
+
 static void mqttEventHandler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
   esp_mqtt_event_handle_t event = static_cast<esp_mqtt_event_handle_t>(event_data);
   switch (static_cast<esp_mqtt_event_id_t>(event_id)) {
     case MQTT_EVENT_CONNECTED:
       mqttConnected = true;
+      esp_mqtt_client_subscribe(mqttClient, ("presencia/" + cfg.nodoId + "/consulta").c_str(), 1);
+      publishPresence();
       Serial.println("[MQTT] Conectado exitosamente al broker institucional (WSS/TLS).");
       break;
+
+    case MQTT_EVENT_DATA: {
+      String expected = "presencia/" + cfg.nodoId + "/consulta";
+      if (event->topic_len != expected.length() ||
+          strncmp(event->topic, expected.c_str(), event->topic_len) != 0 ||
+          event->data_len != 32) break;
+      char nonce[33];
+      memcpy(nonce, event->data, 32);
+      nonce[32] = '\0';
+      bool valid = true;
+      for (int i = 0; i < 32; ++i) {
+        if (!isxdigit(static_cast<unsigned char>(nonce[i]))) valid = false;
+      }
+      if (valid) {
+        String responseTopic = "presencia/" + cfg.nodoId + "/respuesta";
+        presenceReplyMsgId = esp_mqtt_client_publish(mqttClient, responseTopic.c_str(), nonce, 32, 1, 0);
+      }
+      break;
+    }
 
     case MQTT_EVENT_DISCONNECTED:
       mqttConnected = false;
@@ -1125,6 +1167,10 @@ static void mqttEventHandler(void *handler_args, esp_event_base_t base, int32_t 
     case MQTT_EVENT_PUBLISHED:
       if (event->msg_id == pendingMsgId) {
         pendingAckReceived = true;
+      } else if (event->msg_id == presenceMsgId) {
+        presenceMsgId = -1;
+      } else if (event->msg_id == presenceReplyMsgId) {
+        presenceReplyMsgId = -1;
       } else {
         duplicadosObservados++;
       }
@@ -1720,6 +1766,8 @@ void loop() {
 
   // 4. Maquina de Estados Finitos de Conectividad y Resiliencia
   runConnectivityFsm(now);
+
+  if (mqttConnected && now - lastPresenceMs >= 60000UL) publishPresence();
 
   // 5. Tarea temporizada: Refresco de pantalla TFT cada 5 s
   drawDisplay(now);

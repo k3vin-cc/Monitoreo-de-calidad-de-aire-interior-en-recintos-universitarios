@@ -273,6 +273,22 @@ class Hub:
             peers = list(self.connections.items())
         room_id = event.get("salaId")
         event_type = event.get("tipo")
+        if event_type == "presencia":
+            session_ids = [sid for _, (sid, _) in peers if sid is not None]
+            admins = fetch_all('''SELECT s.id FROM sesiones_usuario s JOIN usuarios u ON u.id=s."usuarioId"
+                WHERE s.id=ANY(%s) AND s.revocada=FALSE AND s."expiraEn">NOW()
+                AND s."ultimaActividadEn">NOW()-(%s * INTERVAL '1 minute')
+                AND u.estado='activo' AND u.rol='ADMIN' ''',
+                (session_ids, SESSION_IDLE_MINUTES)) if session_ids else []
+            allowed = {row["id"] for row in admins}
+            for ws, (sid, expiry) in peers:
+                if sid not in allowed or expiry is None or expiry <= datetime.now(timezone.utc):
+                    continue
+                try:
+                    await ws.send_json(event)
+                except Exception:
+                    await self.disconnect(ws)
+            return
         if not room_id or event_type not in ("ventana", "alerta"):
             return
         session_ids = [session_id for _, (session_id, _) in peers if session_id is not None]
@@ -334,6 +350,10 @@ MQTT_NODE_ROLE_PREFIX = "aira-nodo-"
 mqtt_dynsec_lock = threading.Lock()
 mqtt_dynsec_response_event = threading.Event()
 mqtt_dynsec_response: dict[str, Any] | None = None
+presence_checks: dict[str, tuple[str, threading.Event]] = {}
+presence_lock = threading.Lock()
+presence_last_request: dict[str, datetime] = {}
+presence_task: asyncio.Task | None = None
 
 
 def persist_packet(raw: dict[str, Any]):
@@ -435,6 +455,8 @@ def persist_packet(raw: dict[str, Any]):
 def mqtt_on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         client.subscribe("telemetria/+/datos", qos=1)
+        client.subscribe("presencia/+/senal", qos=1)
+        client.subscribe("presencia/+/respuesta", qos=1)
         client.subscribe(MQTT_DYNSEC_RESPONSE_TOPIC, qos=1)
         log.info("Suscrito a telemetria/+/datos")
     else:
@@ -450,6 +472,25 @@ def mqtt_on_message(client, userdata, message):
         except (UnicodeDecodeError, json.JSONDecodeError):
             log.error("Respuesta inválida del control de seguridad MQTT")
         return
+    if message.topic.startswith("presencia/"):
+        try:
+            parts = message.topic.split("/")
+            if len(parts) != 3 or len(message.payload) > 80 or not re.fullmatch(r"[0-9a-f-]{36}", parts[1]):
+                raise ValueError("Tópico o tamaño de presencia inválido")
+            if parts[2] == "senal":
+                session, sequence = message.payload.decode("ascii").split(":")
+                if not session.isdecimal() or not sequence.isdecimal():
+                    raise ValueError("Secuencia inválida")
+                record_presence(parts[1], int(session), int(sequence))
+            elif parts[2] == "respuesta":
+                nonce = message.payload.decode("ascii")
+                with presence_lock:
+                    waiting = presence_checks.get(parts[1])
+                    if waiting and secrets.compare_digest(waiting[0], nonce):
+                        waiting[1].set()
+        except (UnicodeDecodeError, ValueError, psycopg.Error) as exc:
+            log.warning("Presencia descartada en %s: %s", message.topic, exc)
+        return
     try:
         raw = json.loads(message.payload.decode("utf-8"))
         if not isinstance(raw, dict) or message.topic != f"telemetria/{raw.get('nodoId')}/datos":
@@ -457,6 +498,45 @@ def mqtt_on_message(client, userdata, message):
         persist_packet(raw)
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError, psycopg.Error) as exc:
         log.warning("Paquete MQTT descartado en %s: %s", message.topic, exc)
+
+
+def record_presence(node_id: str, session: int, sequence: int):
+    """Nombre: record_presence. Razón: registra señales periódicas verificadas.
+    Entradas: identidad MQTT del nodo, sesión y secuencia. Salida: ninguna.
+    Efectos: actualiza presencia y última señal en PostgreSQL.
+    """
+    if not 0 < session <= 4294967295 or not 0 < sequence <= 4294967295:
+        raise ValueError("Contadores de presencia fuera de rango")
+    row = fetch_one('''UPDATE nodos SET "ultimaSenalPresencia"=NOW(),
+        "presenciaPendienteDesde"=NULL,"presenciaSesion"=%s,"presenciaSecuencia"=%s,
+        estado='conectado' WHERE id=%s AND "retiradoEn" IS NULL
+        AND ("presenciaSesion" IS DISTINCT FROM %s OR "presenciaSecuencia" IS NULL
+             OR "presenciaSecuencia"<%s)
+        RETURNING id,"ultimaSenalPresencia"''', (session, sequence, node_id, session, sequence))
+    if row:
+        hub.publish_from_thread({"tipo":"presencia","nodoId":node_id,"estado":"conectado",
+            "ultimaSenalPresencia":row["ultimaSenalPresencia"].isoformat()})
+
+
+async def check_presence_deadlines():
+    """Nombre: check_presence_deadlines. Razón: vence señales ausentes sin navegador.
+    Entradas: reloj de PostgreSQL. Salida: ninguna. Efectos: actualiza estados vencidos.
+    """
+    while True:
+        try:
+            rows = await asyncio.to_thread(fetch_all, '''UPDATE nodos SET estado='no_respondio',
+                "presenciaPendienteDesde"="ultimaSenalPresencia"+INTERVAL '60 seconds'
+                WHERE estado='conectado' AND "ultimaSenalPresencia" IS NOT NULL
+                AND "ultimaSenalPresencia"<NOW()-INTERVAL '62 seconds'
+                AND "retiradoEn" IS NULL RETURNING id,estado''')
+            rows += await asyncio.to_thread(fetch_all, '''UPDATE nodos SET estado='desconectado'
+                WHERE estado='no_respondio' AND "presenciaPendienteDesde"<NOW()-INTERVAL '30 seconds'
+                AND "retiradoEn" IS NULL RETURNING id,estado''')
+            for row in rows:
+                hub.publish_from_thread({"tipo":"presencia","nodoId":row["id"],"estado":row["estado"]})
+        except psycopg.Error:
+            log.exception("Error al comprobar presencia de nodos")
+        await asyncio.sleep(5)
 
 
 def mqtt_dynsec_command(command: dict[str, Any]) -> dict[str, Any]:
@@ -492,16 +572,29 @@ def mqtt_dynsec_command(command: dict[str, Any]) -> dict[str, Any]:
 
 
 def provision_mqtt_client(node_id: str, password: str, force_update: bool = False):
-    """Ensure this ESP32 has a broker account limited to its own telemetry topic."""
+    """Mantiene permisos MQTT limitados a los tópicos propios del nodo."""
     role_name = f"{MQTT_NODE_ROLE_PREFIX}{node_id}"
+    presence_acls = [
+        ("publishClientSend", f"presencia/{node_id}/senal"),
+        ("publishClientSend", f"presencia/{node_id}/respuesta"),
+        ("subscribeLiteral", f"presencia/{node_id}/consulta"),
+        ("publishClientReceive", f"presencia/{node_id}/consulta"),
+    ]
     try:
-        mqtt_dynsec_command({"command": "getRole", "rolename": role_name})
+        role = mqtt_dynsec_command({"command": "getRole", "rolename": role_name})
     except RuntimeError as exc:
         if "not found" not in str(exc).lower():
             raise
         mqtt_dynsec_command({"command": "createRole", "rolename": role_name, "acls": [
             {"acltype": "publishClientSend", "topic": f"telemetria/{node_id}/datos", "allow": True, "priority": 1}
         ]})
+        role = mqtt_dynsec_command({"command": "getRole", "rolename": role_name})
+
+    existing = role.get("data", {}).get("role", {}).get("acls") or []
+    for acltype, topic in presence_acls:
+        if not any(item.get("acltype") == acltype and item.get("topic") == topic for item in existing):
+            mqtt_dynsec_command({"command": "addRoleACL", "rolename": role_name,
+                                 "acltype": acltype, "topic": topic, "allow": True, "priority": 1})
 
     try:
         client = mqtt_dynsec_command({"command": "getClient", "username": node_id})
@@ -1211,7 +1304,7 @@ async def telegram_polling():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mqtt_client, telegram_task
+    global mqtt_client, telegram_task, presence_task
     hub.loop = asyncio.get_running_loop()
     FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
     if MQTT_PASSWORD:
@@ -1227,11 +1320,14 @@ async def lifespan(app: FastAPI):
             log.exception("No se pudo iniciar el cliente MQTT")
     else:
         log.warning("MQTT_PASSWORD no configurada; ingesta MQTT desactivada")
+    presence_task = asyncio.create_task(check_presence_deadlines())
     if TELEGRAM_BOT_TOKEN:
         telegram_task = asyncio.create_task(telegram_polling())
     else:
         log.info("Bot de Telegram desactivado: TELEGRAM_BOT_TOKEN está vacío")
     yield
+    if presence_task:
+        presence_task.cancel()
     if telegram_task:
         telegram_task.cancel()
     if mqtt_client:
@@ -2028,7 +2124,7 @@ def alerts(salaId: str | None = None, estado: Literal["activa", "resuelta"] | No
 @app.get("/nodos")
 def nodes(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN"))):
     return fetch_all('''SELECT n.id,n.nombre,n."salaId",n."macAddress",n.estado,n.firmware,n."firmwareId",n."wifiSsid",
-        n."ultimaTelemetria",n."ultimoFlasheoEn",n."createdAt",n."updatedAt",
+        n."ultimaTelemetria",n."ultimaSenalPresencia",n."ultimoFlasheoEn",n."createdAt",n."updatedAt",
         r.nombre AS "salaNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre",
         (n."salaId" IS NULL AND ultima."salaId" IS NOT NULL) AS "salaContextoHistorico",
         CASE WHEN %s THEN COALESCE(t.total,0) ELSE NULL::bigint END AS "telemetriaTotal",
@@ -2072,11 +2168,41 @@ def node_retirement_summary(nodoId: str, user=Depends(allow_roles("ADMIN"))):
 
 @app.get("/nodos/{nodoId}")
 def node_detail(nodoId: str, user=Depends(allow_roles("ADMIN"))):
-    row = fetch_one('''SELECT id,nombre,"salaId","macAddress",estado,firmware,"firmwareId","wifiSsid","ultimaTelemetria","ultimoFlasheoEn","createdAt","updatedAt"
+    row = fetch_one('''SELECT id,nombre,"salaId","macAddress",estado,firmware,"firmwareId","wifiSsid","ultimaTelemetria","ultimaSenalPresencia","ultimoFlasheoEn","createdAt","updatedAt"
         FROM nodos WHERE id=%s''', (nodoId,))
     if not row:
         raise HTTPException(404,"Nodo no encontrado")
     return row
+
+
+@app.post("/nodos/{nodoId}/verificar-presencia")
+async def verify_node_presence(nodoId: str, user=Depends(allow_roles("ADMIN"))):
+    """Nombre: verify_node_presence. Razón: permite un diagnóstico puntual sin alterar
+    el plazo periódico. Entradas: nodoId y sesión ADMIN. Salida: resultado y hora.
+    Efectos: publica una solicitud MQTT temporal; no cambia la presencia persistida.
+    """
+    if not fetch_one('SELECT id FROM nodos WHERE id=%s AND "retiradoEn" IS NULL', (nodoId,)):
+        raise HTTPException(404, "Nodo no encontrado")
+    if mqtt_client is None or not mqtt_client.is_connected():
+        raise HTTPException(503, "Broker MQTT no disponible")
+    with presence_lock:
+        now = datetime.now(timezone.utc)
+        previous = presence_last_request.get(nodoId)
+        if previous and (now-previous).total_seconds() < 10:
+            raise HTTPException(429, "Espera 10 segundos antes de repetir la verificación")
+        nonce = secrets.token_hex(16)
+        event = threading.Event()
+        presence_checks[nodoId] = (nonce, event)
+        presence_last_request[nodoId] = now
+    try:
+        info = mqtt_client.publish(f"presencia/{nodoId}/consulta", nonce, qos=1)
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise HTTPException(503, "No se pudo enviar la consulta")
+        return {"respondio": await asyncio.to_thread(event.wait, 5), "consultadoEn": now.isoformat()}
+    finally:
+        with presence_lock:
+            if presence_checks.get(nodoId, (None, None))[0] == nonce:
+                presence_checks.pop(nodoId, None)
 
 
 @app.post("/nodos/{nodoId}/aprovisionamiento")
