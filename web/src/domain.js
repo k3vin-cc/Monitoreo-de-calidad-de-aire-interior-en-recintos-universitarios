@@ -31,3 +31,24 @@ export function nodePresence(lastTelemetry, now=Date.now()) {
   if (!Number.isFinite(timestamp) || timestamp>now+120000) return 'sin_datos';
   return now-timestamp<12*60000 ? 'reciente' : 'sin_senal';
 }
+export const NODE_CONNECTION_LABELS = {
+  conectado: 'Conectado',
+  no_respondio: 'No respondió',
+  desconectado: 'Desconectado',
+  presencia_no_disponible: 'Presencia no disponible'
+};
+export const NODE_CONNECTION_BADGES = {
+  conectado: 'good',
+  no_respondio: 'caution',
+  desconectado: 'muted',
+  presencia_no_disponible: 'muted'
+};
+/** Nombre: nodeConnectionState. Razón: separa la presencia del nodo de la antigüedad de sus mediciones.
+ * Entradas: nodo recibido desde la API, con estado y última señal periódica.
+ * Salida: estado de presencia permitido o presencia_no_disponible. Efectos: ninguno. */
+export function nodeConnectionState(node) {
+  if (!node?.ultimaSenalPresencia) return 'presencia_no_disponible';
+  return ['conectado', 'no_respondio', 'desconectado'].includes(node.estado)
+    ? node.estado
+    : 'presencia_no_disponible';
+}
