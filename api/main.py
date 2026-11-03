@@ -96,6 +96,11 @@ class TelemetryPacket(BaseModel):
     ventana_inicio: datetime | None = Field(default=None, alias="ventanaInicio")
     ventana_fin_real: datetime | None = Field(default=None, alias="ventanaFinReal")
     firmware_version: str | None = Field(default=None, alias="firmwareVersion", max_length=20)
+    sesion_arranque: int | None = Field(default=None, alias="sesionArranque", ge=1)
+    fin_monotonico_us: int | None = Field(default=None, alias="finMonotonicoUs", ge=0)
+    duracion_ventana_ms: int | None = Field(default=None, alias="duracionVentanaMs", ge=0, le=600000)
+    timestamp_estimado: datetime | None = Field(default=None, alias="timestampEstimado")
+    calidad_hora: Literal["verificada", "estimada_ntp_posterior", "desconocida"] | None = Field(default=None, alias="calidadHora")
     medias_clasificacion: dict[str, float | None] | None = Field(default=None, alias="mediasClasificacion")
     subniveles: dict[str, int | None] | None = None
     persistencia: dict[str, Any] | None = None
@@ -125,7 +130,7 @@ class TelemetryPacket(BaseModel):
     celda_matriz: str | None = Field(default=None, alias="celdaMatriz", max_length=5)
     recomendaciones: list[str] | None = None
 
-    @field_validator("timestamp", "ventana_inicio", "ventana_fin_real")
+    @field_validator("timestamp", "ventana_inicio", "ventana_fin_real", "timestamp_estimado")
     @classmethod
     def timestamp_is_aware(cls, value):
         if value is not None and value.tzinfo is None:
@@ -333,6 +338,18 @@ mqtt_dynsec_response: dict[str, Any] | None = None
 
 def persist_packet(raw: dict[str, Any]):
     packet = TelemetryPacket.model_validate(raw)
+    if packet.hora_verificada and packet.calidad_hora not in (None, "verificada"):
+        raise ValueError("calidadHora incompatible con horaVerificada")
+    if not packet.hora_verificada and packet.calidad_hora == "verificada":
+        raise ValueError("calidadHora incompatible con horaVerificada")
+    if packet.timestamp_estimado:
+        if (packet.hora_verificada or packet.calidad_hora != "estimada_ntp_posterior"
+                or packet.sesion_arranque is None or packet.fin_monotonico_us is None
+                or packet.timestamp_estimado > datetime.now(timezone.utc) + timedelta(minutes=2)
+                or packet.timestamp_estimado.year < 2023):
+            raise ValueError("timestampEstimado inválido o sin referencia de arranque")
+    elif packet.calidad_hora == "estimada_ntp_posterior":
+        raise ValueError("falta timestampEstimado")
     if packet.ventana_id and packet.orden_registro is not None and packet.ventana_id != f"{packet.nodo_id}:{packet.orden_registro}":
         raise ValueError("ventanaId no coincide con nodoId y ordenRegistro")
     if packet.ventana_inicio and packet.ventana_fin_real and packet.ventana_inicio > packet.ventana_fin_real:
@@ -402,10 +419,17 @@ def persist_packet(raw: dict[str, Any]):
         if packet.orden_registro is None:
             raise ValueError("ordenRegistro requerido cuando horaVerificada=false")
         cur.execute('''INSERT INTO telemetria_tiempo_incierto
-            ("nodoId","salaId","ordenRegistro","ventanasDescartadas","paqueteOriginal")
-            VALUES (%s,%s,%s,%s,%s) ON CONFLICT ("nodoId","ordenRegistro","recibidoEn") DO NOTHING''',
-            (packet.nodo_id, sala_id, packet.orden_registro, packet.ventanas_descartadas, Jsonb(raw)))
-        return {"tabla": "telemetria_tiempo_incierto", "insertada": cur.rowcount == 1}
+            ("nodoId","salaId","ordenRegistro","ventanasDescartadas","paqueteOriginal","timestampResuelto")
+            VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
+            (packet.nodo_id, sala_id, packet.orden_registro, packet.ventanas_descartadas,
+             Jsonb(raw), packet.timestamp_estimado))
+        inserted = cur.rowcount == 1
+        if not inserted and packet.firmware_version == "v1.0.9" and packet.timestamp_estimado:
+            cur.execute('''UPDATE telemetria_tiempo_incierto SET "timestampResuelto"=%s,
+                "paqueteOriginal"=%s WHERE "nodoId"=%s AND "ordenRegistro"=%s
+                AND "paqueteOriginal"->>'firmwareVersion'='v1.0.9' AND "timestampResuelto" IS NULL''',
+                (packet.timestamp_estimado, Jsonb(raw), packet.nodo_id, packet.orden_registro))
+        return {"tabla": "telemetria_tiempo_incierto", "insertada": inserted}
 
 
 def mqtt_on_connect(client, userdata, flags, reason_code, properties):
@@ -428,6 +452,8 @@ def mqtt_on_message(client, userdata, message):
         return
     try:
         raw = json.loads(message.payload.decode("utf-8"))
+        if not isinstance(raw, dict) or message.topic != f"telemetria/{raw.get('nodoId')}/datos":
+            raise ValueError("tópico MQTT no coincide con nodoId")
         persist_packet(raw)
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError, psycopg.Error) as exc:
         log.warning("Paquete MQTT descartado en %s: %s", message.topic, exc)
@@ -1872,8 +1898,40 @@ def room_telemetry(salaId: str, desde: datetime | None = None, hasta: datetime |
         if desde > hasta:
             raise HTTPException(422,"La fecha inicial debe ser anterior a la fecha final")
     ensure_room_access(user, salaId)
-    return fetch_all('''SELECT * FROM telemetria WHERE "salaId"=%s AND (%s::timestamptz IS NULL OR "timestamp">=%s::timestamptz)
-        AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp" DESC LIMIT %s''', (salaId,desde,desde,hasta,hasta,limite))
+    return [row["data"] for row in fetch_all(HISTORY_UNION_SQL + ' ORDER BY fecha DESC,nodo,orden DESC LIMIT %s',
+        (salaId, desde, desde, hasta, hasta, salaId, desde, desde, hasta, hasta, limite))]
+
+
+@app.get("/salas/{salaId}/telemetria-sin-fecha")
+def room_telemetry_without_date(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+    """
+    Nombre   : room_telemetry_without_date
+    Razón    : Informa cuántas ventanas locales recuperadas siguen sin fecha absoluta.
+    Entradas : salaId y usuario autenticado con permiso de análisis.
+    Salida   : total de ventanas sin fecha para la sala autorizada.
+    Efectos  : Ninguno; consulta de solo lectura.
+    """
+    ensure_room_access(user, salaId)
+    return fetch_one('''SELECT COUNT(*) AS total FROM telemetria_tiempo_incierto
+        WHERE "salaId"=%s AND "timestampResuelto" IS NULL''', (salaId,))
+
+
+HISTORY_UNION_SQL = '''SELECT data FROM (
+    SELECT to_jsonb(t) || jsonb_build_object('calidadHora','verificada') AS data,
+           t."timestamp" AS fecha, t."nodoId" AS nodo, t."ordenRegistro" AS orden
+      FROM telemetria t
+     WHERE t."salaId"=%s AND (%s::timestamptz IS NULL OR t."timestamp">=%s::timestamptz)
+       AND (%s::timestamptz IS NULL OR t."timestamp"<=%s::timestamptz)
+    UNION ALL
+    SELECT ti."paqueteOriginal" || jsonb_build_object(
+           'timestamp',ti."timestampResuelto",'calidadHora','estimada_ntp_posterior',
+           'salaId',ti."salaId",'recibidoEn',ti."recibidoEn") AS data,
+           ti."timestampResuelto" AS fecha, ti."nodoId" AS nodo, ti."ordenRegistro" AS orden
+      FROM telemetria_tiempo_incierto ti
+     WHERE ti."salaId"=%s AND ti."timestampResuelto" IS NOT NULL
+       AND (%s::timestamptz IS NULL OR ti."timestampResuelto">=%s::timestamptz)
+       AND (%s::timestamptz IS NULL OR ti."timestampResuelto"<=%s::timestamptz)
+) historial'''
 
 
 def csv_safe_text(value: str) -> str:
@@ -1898,31 +1956,32 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
     Salida   : bloques CSV protegidos o un arreglo JSON válido.
     Efectos  : Mantiene una consulta de solo lectura abierta durante la transmisión.
     """
-    sql = '''SELECT * FROM telemetria WHERE "salaId"=%s AND (%s::timestamptz IS NULL OR "timestamp">=%s::timestamptz)
-        AND (%s::timestamptz IS NULL OR "timestamp"<=%s::timestamptz) ORDER BY "timestamp"'''
-    params = (sala_id, desde, desde, hasta, hasta)
+    params = (sala_id, desde, desde, hasta, hasta, sala_id, desde, desde, hasta, hasta)
     with db() as conn, conn.cursor(name="exportacion_sala") as cur:
         cur.itersize = 100
-        cur.execute(sql, params)
+        cur.execute(HISTORY_UNION_SQL + ' ORDER BY fecha,nodo,orden', params)
         if formato == "json":
             yield b"["
             first = True
-            for row in cur:
+            for result in cur:
                 if not first:
                     yield ",".encode("utf-8")
-                yield json.dumps(jsonable_encoder(row), ensure_ascii=False).encode("utf-8")
+                yield json.dumps(jsonable_encoder(result["data"]), ensure_ascii=False).encode("utf-8")
                 first = False
             yield b"]"
             return
         output = io.StringIO(newline="")
-        writer = None
-        for row in cur:
-            if writer is None:
-                writer = csv.DictWriter(output, fieldnames=list(row.keys()))
-                writer.writeheader()
-                yield output.getvalue().encode("utf-8")
-                output.seek(0)
-                output.truncate(0)
+        with conn.cursor() as columns:
+            columns.execute('SELECT * FROM telemetria LIMIT 0')
+            fieldnames = [item.name for item in columns.description]
+        fieldnames += ["calidadHora", "sesionArranque", "finMonotonicoUs", "duracionVentanaMs", "timestampEstimado"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        yield output.getvalue().encode("utf-8")
+        output.seek(0)
+        output.truncate(0)
+        for result in cur:
+            row = result["data"]
             values = {}
             for key, value in row.items():
                 if isinstance(value, (dict, list)):

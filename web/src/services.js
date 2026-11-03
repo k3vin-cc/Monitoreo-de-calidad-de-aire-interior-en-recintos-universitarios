@@ -69,7 +69,7 @@ export const api = {
   spacesSummary: ()=>request('/espacios/resumen'),
   state: (id,options={})=>request(`/salas/${encodeURIComponent(id)}/estado${query(options)}`),
   /** Nombre: stateComplements. Razón: solicita métricas y alertas después del estado actual. Entradas: identificador de sala. Salida: complementos permitidos por el servidor. Efectos: consulta la API. */
-  stateComplements: id=>request(`/salas/${encodeURIComponent(id)}/estado/complementos`), telemetry:(id,params)=>request(`/salas/${encodeURIComponent(id)}/telemetria${query(params)}`),
+  stateComplements: id=>request(`/salas/${encodeURIComponent(id)}/estado/complementos`), telemetry:(id,params)=>request(`/salas/${encodeURIComponent(id)}/telemetria${query(params)}`), telemetryWithoutDate:id=>request(`/salas/${encodeURIComponent(id)}/telemetria-sin-fecha`),
   exportRoom:(id,format,params)=>request(`/salas/${encodeURIComponent(id)}/exportacion${query({formato:format,...params})}`),
   alerts:params=>request('/alertas'+query(params)), nodes: (options={})=>request('/nodos'+query({incluirConteosHistorial:false,...options})),
   /** Nombre: nodeRetirementSummary. Razón: obtiene el historial sólo al abrir el diálogo de retiro. Entradas: id del nodo seleccionado. Salida: conteos históricos del nodo. Efectos: ninguno; consulta la API. */

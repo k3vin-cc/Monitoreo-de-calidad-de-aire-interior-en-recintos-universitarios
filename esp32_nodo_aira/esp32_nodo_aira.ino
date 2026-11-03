@@ -32,6 +32,7 @@
 #include <mqtt_client.h>
 #include <time.h>
 #include <math.h>
+#include <esp_timer.h>
 
 #include "config.h"
 #include "secrets.h"
@@ -164,6 +165,8 @@ unsigned long lastDegradedTryMs  = 0;
 
 // Estado de sincronizacion NTP
 bool ntpSynced                   = false;
+bool firstWindowDiscarded        = false;
+uint32_t bootSession             = 0;
 
 // Estado del cliente MQTTS / WSS (ESP-IDF esp_mqtt_client)
 esp_mqtt_client_handle_t mqttClient = nullptr;
@@ -492,6 +495,8 @@ WindowEvaluation evaluateCurrentWindow() {
   seqOrdenRegistro++;
   prefs.putUInt("seq_order", seqOrdenRegistro);
   ev.ordenRegistro = seqOrdenRegistro;
+  ev.sesionArranque = bootSession;
+  ev.finMonotonicoUs = esp_timer_get_time();
   ev.ventanaAnteriorId = prevWin.ventanaId;
   if (prevWin.ventanaId.length() == 0) ev.motivoPersistencia = "sin_ventana_anterior";
   else if (!prevWin.validCompleto) ev.motivoPersistencia = "anterior_incompleta";
@@ -715,6 +720,13 @@ String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
     p += "\"timestamp\":null,";
   }
   p += "\"ordenRegistro\":" + String(ev.ordenRegistro) + ",";
+  p += "\"sesionArranque\":" + String(ev.sesionArranque) + ",";
+  char monotonicText[24];
+  snprintf(monotonicText, sizeof(monotonicText), "%lld", static_cast<long long>(ev.finMonotonicoUs));
+  p += "\"finMonotonicoUs\":" + String(monotonicText) + ",";
+  p += "\"duracionVentanaMs\":" + String(ev.duracionVentanaMs) + ",";
+  p += "\"timestampEstimado\":null,\"calidadHora\":\"";
+  p += (ev.horaVerificada ? "verificada\"," : "desconocida\",");
   p += "\"ventanaId\":\"" + jsonEscape(cfg.nodoId + ":" + String(ev.ordenRegistro)) + "\",";
   p += "\"ventanaInicio\":" + (ev.ventanaInicioIso.length() ? "\"" + ev.ventanaInicioIso + "\"" : String("null")) + ",";
   p += "\"ventanaFinReal\":" + (ev.ventanaFinRealIso.length() ? "\"" + ev.ventanaFinRealIso + "\"" : String("null")) + ",";
@@ -825,12 +837,106 @@ String slotFilePath(int slot) {
   return "/q_" + String(slot) + ".json";
 }
 
+/**
+ * Nombre   : jsonIntegerField
+ * Razón    : Extrae metadatos numéricos de los paquetes propios guardados en LittleFS.
+ * Entradas : payload y nombre de campo generado por buildTelemetryJson.
+ * Salida   : número no negativo; -1 si el campo falta o es inválido.
+ * Efectos  : Ninguno.
+ */
+int64_t jsonIntegerField(const String &payload, const char *field) {
+  String key = "\"" + String(field) + "\":";
+  int start = payload.indexOf(key);
+  if (start < 0) return -1;
+  start += key.length();
+  int end = start;
+  while (end < static_cast<int>(payload.length()) && payload[end] >= '0' && payload[end] <= '9') ++end;
+  if (end == start || end - start > 19) return -1;
+  return strtoll(payload.substring(start, end).c_str(), nullptr, 10);
+}
+
+/**
+ * Nombre   : saveTimeAnchor
+ * Razón    : Conserva la referencia NTP de este arranque para ventanas pendientes tras otro reinicio.
+ * Entradas : hora UTC y tiempo monotónico actuales.
+ * Salida   : Ninguna.
+ * Efectos  : Escribe un archivo de referencia por sesión en LittleFS.
+ */
+void saveTimeAnchor(time_t utc, int64_t monotonicUs) {
+  if (!littleFsReady) return;
+  String path = "/a_" + String(bootSession) + ".txt";
+  if (LittleFS.exists(path)) return;
+  String temporary = path + ".tmp";
+  char anchor[64];
+  int length = snprintf(anchor, sizeof(anchor), "%lld,%lld", static_cast<long long>(utc), static_cast<long long>(monotonicUs));
+  File file = LittleFS.open(temporary, "w");
+  if (!file) return;
+  bool complete = file.write(reinterpret_cast<const uint8_t *>(anchor), length) == static_cast<size_t>(length);
+  file.close();
+  if (!complete || !LittleFS.rename(temporary, path)) {
+    LittleFS.remove(temporary);
+    Serial.println("[NTP] No fue posible persistir la referencia horaria.");
+  }
+}
+
+/**
+ * Nombre   : estimatedWindowTimestamp
+ * Razón    : Fecha una ventana sin NTP usando una referencia posterior del mismo arranque.
+ * Entradas : sesión y microsegundos de cierre del paquete guardado.
+ * Salida   : ISO UTC estimado o cadena vacía cuando no existe referencia válida.
+ * Efectos  : Lectura de LittleFS.
+ */
+String estimatedWindowTimestamp(uint32_t session, int64_t windowUs) {
+  if (!littleFsReady || session == 0 || windowUs < 0) return "";
+  File file = LittleFS.open("/a_" + String(session) + ".txt", "r");
+  if (!file) return "";
+  String anchor = file.readString();
+  file.close();
+  int comma = anchor.indexOf(',');
+  if (comma <= 0) return "";
+  int64_t utc = strtoll(anchor.substring(0, comma).c_str(), nullptr, 10);
+  int64_t anchorUs = strtoll(anchor.substring(comma + 1).c_str(), nullptr, 10);
+  if (utc < 1700000000LL || anchorUs < windowUs) return "";
+  time_t estimated = static_cast<time_t>(utc - (anchorUs - windowUs) / 1000000LL);
+  if (estimated < 1700000000L || estimated > utc) return "";
+  struct tm utcParts;
+  gmtime_r(&estimated, &utcParts);
+  char stamp[32];
+  strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%SZ", &utcParts);
+  return String(stamp);
+}
+
+/**
+ * Nombre   : removeUnusedTimeAnchor
+ * Razón    : Libera referencias horarias de sesiones sin ventanas pendientes.
+ * Entradas : identificador de la sesión que pudo perder su última ventana.
+ * Salida   : Ninguna.
+ * Efectos  : Puede borrar un archivo de referencia en LittleFS.
+ */
+void removeUnusedTimeAnchor(uint32_t session) {
+  if (!littleFsReady || session == 0) return;
+  for (int offset = 0; offset < bufCount; ++offset) {
+    int slot = (bufHead + offset) % BUFFER_CAPACITY;
+    File file = LittleFS.open(slotFilePath(slot), "r");
+    if (!file) continue;
+    String payload = file.readString();
+    file.close();
+    if (jsonIntegerField(payload, "sesionArranque") == session) return;
+  }
+  LittleFS.remove("/a_" + String(session) + ".txt");
+}
+
 void saveBufferMeta() {
+  uint32_t state = 0xA0000000UL | (static_cast<uint32_t>(bufHead) << 10)
+                 | (static_cast<uint32_t>(bufTail) << 5) | static_cast<uint32_t>(bufCount);
+  prefs.putUInt("buf_state", state);
   prefs.putInt("buf_head", bufHead);
   prefs.putInt("buf_tail", bufTail);
   prefs.putInt("buf_count", bufCount);
   prefs.putUInt("win_drop", ventanasDescartadas);
 }
+
+void enqueueWindowToLittleFS(const String &jsonPayload);
 
 void loadConfigAndBufferMeta() {
   prefs.begin("aira_cfg", false);
@@ -846,12 +952,33 @@ void loadConfigAndBufferMeta() {
   bufHead             = prefs.getInt("buf_head",   0);
   bufTail             = prefs.getInt("buf_tail",   0);
   bufCount            = prefs.getInt("buf_count",  0);
+  uint32_t state = prefs.getUInt("buf_state", 0);
+  if ((state & 0xF0000000UL) == 0xA0000000UL) {
+    bufHead = (state >> 10) & 0x1F;
+    bufTail = (state >> 5) & 0x1F;
+    bufCount = state & 0x1F;
+  }
 
   if (bufCount < 0 || bufCount > BUFFER_CAPACITY ||
       bufHead < 0  || bufHead >= BUFFER_CAPACITY ||
       bufTail < 0  || bufTail >= BUFFER_CAPACITY) {
     bufHead = bufTail = bufCount = 0;
     saveBufferMeta();
+  }
+  if (littleFsReady) {
+    // Recupera una ranura confirmada cuyo puntero NVS no alcanzó a actualizarse.
+    while (bufCount < BUFFER_CAPACITY && LittleFS.exists(slotFilePath(bufTail))) {
+      bufTail = (bufTail + 1) % BUFFER_CAPACITY;
+      bufCount++;
+      saveBufferMeta();
+    }
+    File pending = LittleFS.open("/q_pending.json", "r");
+    if (pending) {
+      String payload = pending.readString();
+      pending.close();
+      LittleFS.remove("/q_pending.json");
+      if (payload.endsWith("}")) enqueueWindowToLittleFS(payload);
+    }
   }
 }
 
@@ -863,26 +990,53 @@ void enqueueWindowToLittleFS(const String &jsonPayload) {
     return;
   }
 
-  // Si el buffer circular esta lleno, sustituye la ventana mas antigua (Seccion 6.7.2 Estado 6)
-  if (bufCount >= BUFFER_CAPACITY) {
-    LittleFS.remove(slotFilePath(bufHead));
+  const size_t reserveBytes = jsonPayload.length() + 4096;
+  while (bufCount > 0 && LittleFS.totalBytes() - LittleFS.usedBytes() < reserveBytes) {
+    File oldest = LittleFS.open(slotFilePath(bufHead), "r");
+    String oldPayload = oldest ? oldest.readString() : "";
+    if (oldest) oldest.close();
+    if (!LittleFS.remove(slotFilePath(bufHead))) break;
     bufHead = (bufHead + 1) % BUFFER_CAPACITY;
     bufCount--;
     ventanasDescartadas++;
-    Serial.printf("[BUFFER] Buffer lleno (%d). Se descarta ventana mas antigua. Total descartadas=%lu\n",
-                  BUFFER_CAPACITY, static_cast<unsigned long>(ventanasDescartadas));
+    saveBufferMeta();
+    int64_t session = jsonIntegerField(oldPayload, "sesionArranque");
+    if (session > 0 && session <= UINT32_MAX) removeUnusedTimeAnchor(static_cast<uint32_t>(session));
   }
-
-  File f = LittleFS.open(slotFilePath(bufTail), "w");
-  if (!f) {
+  const String temporary = "/q_pending.json";
+  File f = LittleFS.open(temporary, "w");
+  if (!f || f.write(reinterpret_cast<const uint8_t *>(jsonPayload.c_str()), jsonPayload.length()) != jsonPayload.length()) {
+    if (f) f.close();
+    LittleFS.remove(temporary);
     ventanasDescartadas++;
     saveBufferMeta();
-    Serial.println("[BUFFER] Error al escribir archivo en LittleFS.");
+    Serial.println("[BUFFER] Escritura incompleta; ventana no encolada.");
     return;
   }
-  f.print(jsonPayload);
   f.close();
-
+  if (bufCount >= BUFFER_CAPACITY) {
+    File oldest = LittleFS.open(slotFilePath(bufHead), "r");
+    String oldPayload = oldest ? oldest.readString() : "";
+    if (oldest) oldest.close();
+    if (!LittleFS.remove(slotFilePath(bufHead))) {
+      LittleFS.remove(temporary);
+      Serial.println("[BUFFER] No se pudo liberar la ventana mas antigua.");
+      return;
+    }
+    bufHead = (bufHead + 1) % BUFFER_CAPACITY;
+    bufCount--;
+    ventanasDescartadas++;
+    saveBufferMeta();
+    int64_t session = jsonIntegerField(oldPayload, "sesionArranque");
+    if (session > 0 && session <= UINT32_MAX) removeUnusedTimeAnchor(static_cast<uint32_t>(session));
+  }
+  if (LittleFS.exists(slotFilePath(bufTail)) || !LittleFS.rename(temporary, slotFilePath(bufTail))) {
+    LittleFS.remove(temporary);
+    ventanasDescartadas++;
+    saveBufferMeta();
+    Serial.println("[BUFFER] Ranura ocupada o error al confirmar archivo.");
+    return;
+  }
   bufTail = (bufTail + 1) % BUFFER_CAPACITY;
   bufCount++;
   saveBufferMeta();
@@ -901,7 +1055,20 @@ bool peekOldestBufferedWindow(String &outPayload) {
   }
   outPayload = f.readString();
   f.close();
-  return outPayload.length() > 10;
+  if (outPayload.length() <= 10) return false;
+  outPayload.replace("\"esRetransmision\":false", "\"esRetransmision\":true");
+  if (outPayload.indexOf("\"horaVerificada\":false") >= 0) {
+    int64_t session = jsonIntegerField(outPayload, "sesionArranque");
+    int64_t closedAt = jsonIntegerField(outPayload, "finMonotonicoUs");
+    if (session > 0 && session <= UINT32_MAX) {
+      String estimate = estimatedWindowTimestamp(static_cast<uint32_t>(session), closedAt);
+      if (estimate.length()) {
+        outPayload.replace("\"timestampEstimado\":null", "\"timestampEstimado\":\"" + estimate + "\"");
+        outPayload.replace("\"calidadHora\":\"desconocida\"", "\"calidadHora\":\"estimada_ntp_posterior\"");
+      }
+    }
+  }
+  return true;
 }
 
 void markOldestBufferedWindowAsRetransmission() {
@@ -921,12 +1088,17 @@ void markOldestBufferedWindowAsRetransmission() {
 
 void popOldestBufferedWindow() {
   if (bufCount <= 0) return;
+  File oldest = littleFsReady ? LittleFS.open(slotFilePath(bufHead), "r") : File();
+  String oldPayload = oldest ? oldest.readString() : "";
+  if (oldest) oldest.close();
   if (littleFsReady) {
     LittleFS.remove(slotFilePath(bufHead));
   }
   bufHead = (bufHead + 1) % BUFFER_CAPACITY;
   bufCount--;
   saveBufferMeta();
+  int64_t session = jsonIntegerField(oldPayload, "sesionArranque");
+  if (session > 0 && session <= UINT32_MAX) removeUnusedTimeAnchor(static_cast<uint32_t>(session));
   Serial.printf("[BUFFER] Ventana retransmitida confirmada por PUBACK y eliminada de LittleFS (restantes=%d)\n", bufCount);
 }
 
@@ -1281,7 +1453,12 @@ void drawDisplay(unsigned long now) {
   tft.setTextSize(1);
   tft.setCursor(12, 226);
   tft.setTextColor(mutedColor);
-  tft.printf("MUESTRAS %d/%d  BUF %d", winAcc.totalTicks, WINDOW_MAX_SAMPLES, bufCount);
+  if (!firstWindowDiscarded) {
+    unsigned long remaining = (WINDOW_DURATION_MS - (now - lastWindowCloseMs)) / 1000UL;
+    tft.printf("ESTABILIZANDO %lus", remaining);
+  } else {
+    tft.printf("MUESTRAS %d/%d  BUF %d", winAcc.totalTicks, WINDOW_MAX_SAMPLES, bufCount);
+  }
   tft.setCursor(170, 226);
   tft.setTextColor(mqttConnected ? colorForScore(0, "completo") : amberColor);
   tft.print(mqttConnected ? "MQTT OK" : "MQTT...");
@@ -1347,6 +1524,8 @@ void runConnectivityFsm(unsigned long now) {
         if (epoch >= 1700000000L) {
           ntpSynced     = true;
           lastNtpSyncMs = now;
+          saveTimeAnchor(epoch, esp_timer_get_time());
+          removeUnusedTimeAnchor(bootSession);
           Serial.printf("[NTP] Reloj UTC sincronizado: %04d-%02d-%02d %02d:%02d:%02dZ\n",
                         timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
                         timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
@@ -1384,7 +1563,7 @@ void runConnectivityFsm(unsigned long now) {
           pendingAckReceived = false;
         } else if (now - pendingPublishAtMs >= MQTT_ACK_TIMEOUT_MS) {
           Serial.println("[MQTT] ACK Timeout esperando PUBACK; conmutando a DEGRADED_BUFFER.");
-          if (pendingFromBuffer) markOldestBufferedWindowAsRetransmission();
+          // El indicador se añade al paquete de salida, sin reescribir LittleFS.
           pendingMsgId = -1;
           stopMqttClient();
           lastDegradedTryMs = now;
@@ -1394,7 +1573,7 @@ void runConnectivityFsm(unsigned long now) {
       }
 
       // Si hay ventanas retenidas en LittleFS y el canal esta libre, retransmitir en orden FIFO (RF-09)
-      if (mqttConnected && pendingMsgId == -1 && bufCount > 0) {
+      if (firstWindowDiscarded && mqttConnected && pendingMsgId == -1 && bufCount > 0) {
         String oldestJson;
         if (peekOldestBufferedWindow(oldestJson)) {
           publishQos1Packet(oldestJson, true);
@@ -1439,7 +1618,19 @@ void processFiveMinuteWindow(unsigned long now) {
   const unsigned long elapsedMs = now - lastWindowCloseMs;
   lastWindowCloseMs = now;
 
+  // La primera ventana de cada arranque solo estabiliza los sensores.
+  if (!firstWindowDiscarded) {
+    firstWindowDiscarded = true;
+    winAcc.reset();
+    lastPmsChecksumErrors = pmsChecksumErrors;
+    lastPmsRangeErrors = pmsRangeErrors;
+    lastScdReadErrors = scdReadErrors;
+    Serial.println("[ESTABILIZACION] Primera ventana descartada; comienza medicion valida.");
+    return;
+  }
+
   WindowEvaluation ev = evaluateCurrentWindow();
+  ev.duracionVentanaMs = elapsedMs;
   if (ev.horaVerificada) {
     const time_t endEpoch = time(nullptr);
     struct tm utc;
@@ -1496,11 +1687,13 @@ void setup() {
   tft.fillScreen(ST77XX_BLACK);
 
   // 2. Montar particion LittleFS para el buffer circular persistente
-  littleFsReady = LittleFS.begin(true);
+  littleFsReady = LittleFS.begin(false);
   Serial.println(littleFsReady ? "[FS] LittleFS montado correctamente" : "[FS] Error montando LittleFS");
 
   // 3. Cargar configuracion NVS y metadatos del buffer
   loadConfigAndBufferMeta();
+  bootSession = prefs.getUInt("boot_session", 0) + 1;
+  prefs.putUInt("boot_session", bootSession);
   Serial.printf("[CFG] Nodo='%s', Sala='%s', SSID='%s', Buffer=%d/%d\n",
                 cfg.nodoId.c_str(), cfg.salaId.c_str(), cfg.wifiSsid.c_str(), bufCount, BUFFER_CAPACITY);
 

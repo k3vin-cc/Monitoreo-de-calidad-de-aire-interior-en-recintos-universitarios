@@ -1,6 +1,10 @@
 # Firmware del nodo ESP32
 
-`esp32_nodo_aira.ino` lee SCD40 y PMS5003, calcula ICAI/ICT/ICG por ventanas de cinco minutos, muestra lecturas y niveles en ST7789 y publica MQTT QoS 1 sobre WSS. Cuando no puede entregar una ventana, la conserva en LittleFS y reintenta. La versión declarada en `config.h` es `v1.0.8` con reglas `reglas-2026.1`; compruébala antes de compilar o registrar un binario. Desde v1.0.8 cada paquete incluye los datos de auditoría descritos en [CAMBIOS_AUDITORIA_ESP32_V108.md](../CAMBIOS_AUDITORIA_ESP32_V108.md).
+`esp32_nodo_aira.ino` lee SCD40 y PMS5003, calcula ICAI/ICT/ICG por ventanas de cinco minutos, muestra lecturas y niveles en ST7789 y publica MQTT QoS 1 sobre WSS. Cuando no puede entregar una ventana, la conserva en LittleFS y reintenta. La versión declarada en `config.h` es `v1.0.9` con reglas `reglas-2026.1`; compruébala antes de compilar o registrar un binario. Desde v1.0.8 cada paquete incluye los datos de auditoría descritos en [CAMBIOS_AUDITORIA_ESP32_V108.md](../CAMBIOS_AUDITORIA_ESP32_V108.md).
+
+En v1.0.9 la primera ventana de cinco minutos tras **cada arranque** se descarta para estabilizar lecturas; no es una calibración del SCD40. La primera ventana nueva se cierra alrededor del minuto diez. Durante los primeros cinco minutos tampoco se retransmiten archivos de la cola previa. Después, las ventanas se guardan antes de enviarse y se recuperan en orden tras volver la red. LittleFS se monta sin formateo automático; un fallo de montaje requiere diagnóstico antes de continuar, porque no se puede garantizar la conservación local. El buffer mantiene hasta 24 ventanas y descarta las más antiguas cuando se agota su capacidad o espacio libre.
+
+Si un arranque ocurre sin NTP, cada ventana conserva una sesión y tiempo transcurrido. Cuando NTP vuelve durante esa sesión, el nodo calcula una fecha **estimada**, que el API guarda separada de las mediciones con hora verificada y que Histórico identifica. Si se pierde la alimentación antes de obtener NTP, las ventanas de esa sesión conservan datos y orden, pero su hora absoluta queda desconocida. El PUBACK sólo confirma recepción en Mosquitto, no inserción final en PostgreSQL.
 
 ## 1. Revisar placa y cableado
 
