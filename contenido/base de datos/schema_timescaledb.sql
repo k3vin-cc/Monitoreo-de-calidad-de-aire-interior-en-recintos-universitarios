@@ -610,7 +610,7 @@ GROUP BY f.id, u.nombre;
 -- 7.3. Vista `vw_particulas_24h_oms`
 -- Alimenta la tarjeta informativa separada en `/salas/:salaId` (Sección 6.5.3.5 y 6.6.3):
 -- Calcula la media de las últimas 24 horas de PM2.5 y PM10 por sala y verifica si cuenta
--- con al menos el 80 % de las 288 ventanas teóricas de 5 minutos (>= 230 ventanas válidas),
+-- con al menos el 80 % de las 288 ventanas teóricas de 5 minutos (>= 231 ventanas válidas),
 -- comparando de forma informativa con las guías OMS de 24 h (15 ug/m3 y 45 ug/m3).
 CREATE OR REPLACE VIEW vw_particulas_24h_oms AS
 SELECT
@@ -618,23 +618,23 @@ SELECT
     COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL)::INTEGER AS "ventanasValidasPm25_24h",
     COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL)::INTEGER AS "ventanasValidasPm10_24h",
     CASE
-        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 230
+        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 231
         THEN ROUND(AVG(t.pm25)::numeric, 2)::DOUBLE PRECISION
         ELSE NULL
     END AS "media24hPm25",
     CASE
-        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 230
+        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 231
         THEN ROUND(AVG(t.pm10)::numeric, 2)::DOUBLE PRECISION
         ELSE NULL
     END AS "media24hPm10",
     15.0::DOUBLE PRECISION AS "referenciaOms24hPm25",
     45.0::DOUBLE PRECISION AS "referenciaOms24hPm10",
     CASE
-        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 230
-         AND COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 230
+        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 231
+         AND COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 231
         THEN 'completo'
-        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 230
-          OR COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 230
+        WHEN COUNT(t."timestamp") FILTER (WHERE t.pm25 IS NOT NULL) >= 231
+          OR COUNT(t."timestamp") FILTER (WHERE t.pm10 IS NOT NULL) >= 231
         THEN 'parcial'
         ELSE 'dato_insuficiente'
     END AS "estadoSerie24h"
@@ -642,6 +642,7 @@ FROM salas s
 LEFT JOIN telemetria t
        ON t."salaId" = s.id
       AND t."timestamp" > NOW() - INTERVAL '24 hours'
+      AND t."timestamp" <= NOW()
 GROUP BY s.id;
 
 COMMIT;

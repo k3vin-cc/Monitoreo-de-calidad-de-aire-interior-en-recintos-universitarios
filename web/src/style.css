@@ -16,3 +16,4 @@
 .bootPhase-release-pending{border-color:#1b7aa8;background:#e7f5fc;color:#075676}.bootPhase-release-pending b{font-size:18px}
 
 .bootPhase-release b{font-size:18px}.bootPhase-connected{border-color:#0c8a65;background:#e4f8ee;color:#095c46}
+.omsStatus{margin:2px 0 0;padding:11px 12px;border:1px solid #d9e8ef;border-radius:8px;background:#f5fafc;color:#426277;font-size:11px;line-height:1.5}.omsStatus p{font-size:11px;margin:0 0 8px}.omsStatus .secondary{font-size:10px}.omsMetric small{font-size:10px}.oms>small{font-size:10px;line-height:1.5}
