@@ -32,9 +32,12 @@ def nivel_distancia(valor: float, minimo: float, maximo: float, paso: float) -> 
 def datos_de_fila(fila: dict[str, str]) -> dict[str, float | None]:
     """Lee las cinco medias sólo si alcanzaron las 24 muestras reglamentarias."""
     conteos = json.loads(fila.get("conteosValidos") or "{}")
+    precisas = json.loads(fila.get("mediasClasificacion") or "{}")
     datos = {}
     for nombre in ("co2", "pm25", "pm10", "temperatura", "humedad"):
-        texto = fila.get(nombre)
+        texto = precisas.get(nombre)
+        if texto is None:
+            texto = fila.get(nombre)
         datos[nombre] = float(texto) if texto and int(conteos.get(nombre, 0)) >= 24 else None
     return datos
 

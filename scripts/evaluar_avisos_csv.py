@@ -3,6 +3,7 @@
 Uso: python scripts/evaluar_avisos_csv.py avisos.csv eventos.csv --tolerancia-min 15
 Avisos: salaId,variable,confirmadaEn. Eventos: salaId,variable,inicio,fin.
 Cada evento y cada aviso se emparejan como máximo una vez por sala y variable.
+Si un episodio anotado produce dos avisos, el segundo cuenta como falso positivo.
 """
 
 import argparse
@@ -22,7 +23,10 @@ def leer_csv(ruta: Path, campos: tuple[str, ...]) -> list[dict]:
 
 def fecha(texto: str) -> datetime:
     """Interpreta un instante ISO 8601 con zona horaria obligatoria."""
-    valor = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+    texto = texto.replace("Z", "+00:00")
+    if texto.endswith("+00"):
+        texto += ":00"
+    valor = datetime.fromisoformat(texto)
     if valor.utcoffset() is None:
         raise ValueError(f"Falta zona horaria en {texto}")
     return valor

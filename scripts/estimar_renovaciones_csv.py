@@ -20,7 +20,10 @@ def leer_ventanas(ruta: Path, exterior: float) -> list[tuple[datetime, float]]:
                 continue
             if not fila.get("timestamp") or not fila.get("co2"):
                 continue
-            hora = datetime.fromisoformat(fila["timestamp"].replace("Z", "+00:00"))
+            texto_hora = fila["timestamp"].replace("Z", "+00:00")
+            if texto_hora.endswith("+00"):
+                texto_hora += ":00"
+            hora = datetime.fromisoformat(texto_hora)
             diferencial = float(fila["co2"]) - exterior
             if diferencial > 0:
                 ventanas.append((hora, diferencial))

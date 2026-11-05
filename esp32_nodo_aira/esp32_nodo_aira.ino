@@ -1771,12 +1771,19 @@ void processFiveMinuteWindow(unsigned long now) {
       return;
     }
     if (currentEpoch < utcWindowEndEpoch) {
-      if (now - lastWindowCloseMs > WINDOW_DURATION_MS + 10000UL)
+      if (now - lastWindowCloseMs > WINDOW_DURATION_MS + 20000UL) {
+        ++ventanasDescartadas;
+        prefs.putUInt("win_drop", ventanasDescartadas);
+        Serial.println("[VENTANA UTC] Ventana descartada por salto del reloj.");
         scheduleUtcWindowStart(currentEpoch, now);
+      }
       return;
     }
     const unsigned long elapsed = now - lastWindowCloseMs;
-    if (currentEpoch > utcWindowEndEpoch + 2 || elapsed < WINDOW_DURATION_MS - 10000UL || elapsed > WINDOW_DURATION_MS + 10000UL) {
+    if (currentEpoch > utcWindowEndEpoch + 20 || elapsed < WINDOW_DURATION_MS - 10000UL || elapsed > WINDOW_DURATION_MS + 20000UL) {
+      ++ventanasDescartadas;
+      prefs.putUInt("win_drop", ventanasDescartadas);
+      Serial.println("[VENTANA UTC] Ventana descartada por atraso o salto del reloj.");
       scheduleUtcWindowStart(currentEpoch, now);
       return;
     }

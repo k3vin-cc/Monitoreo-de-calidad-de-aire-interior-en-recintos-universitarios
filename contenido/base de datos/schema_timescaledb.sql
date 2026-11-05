@@ -199,12 +199,16 @@ CREATE TABLE IF NOT EXISTS nodos (
     nombre              VARCHAR(100) NOT NULL,
     "salaId"            VARCHAR(36) UNIQUE REFERENCES salas(id) ON UPDATE CASCADE ON DELETE SET NULL,
     "macAddress"        VARCHAR(17) UNIQUE,      -- Leída por Web Serial USB durante el aprovisionamiento
-    estado              VARCHAR(20) NOT NULL DEFAULT 'desconectado' CHECK (estado IN ('conectado', 'desconectado')),
+    estado              VARCHAR(20) NOT NULL DEFAULT 'desconectado' CHECK (estado IN ('conectado', 'no_respondio', 'desconectado')),
     firmware            VARCHAR(20) NOT NULL DEFAULT 'v1.0.0', -- Versión actual instalada
     "firmwareId"        VARCHAR(36) REFERENCES firmwares(id) ON UPDATE CASCADE ON DELETE SET NULL,
     "wifiSsid"          VARCHAR(50),
     "jwtToken"          TEXT,                    -- Token JWT o identificador de credencial del dispositivo
     "ultimaTelemetria"  TIMESTAMPTZ,
+    "ultimaSenalPresencia" TIMESTAMPTZ,
+    "presenciaPendienteDesde" TIMESTAMPTZ,
+    "presenciaSesion" BIGINT,
+    "presenciaSecuencia" BIGINT,
     "ultimoFlasheoEn"   TIMESTAMPTZ,
     "flasheadoPor"      VARCHAR(36) REFERENCES usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL,
     "retiradoEn"        TIMESTAMPTZ,
@@ -319,6 +323,19 @@ CREATE INDEX IF NOT EXISTS idx_telemetria_incierta_pendiente
     WHERE "migradoATelemetria" = FALSE;
 
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v109_nodo_orden
+ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
+WHERE "paqueteOriginal"->>'firmwareVersion' = 'v1.0.9';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v110_v111_nodo_orden
+ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
+WHERE "paqueteOriginal"->>'firmwareVersion' IN ('v1.0.10', 'v1.0.11');
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v1111_nodo_orden
+ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
+WHERE "paqueteOriginal"->>'firmwareVersion' = 'v1.0.11.1';
+CREATE INDEX IF NOT EXISTS idx_incierto_sala_fecha_estimada
+ON telemetria_tiempo_incierto ("salaId", "timestampResuelto" DESC)
+WHERE "timestampResuelto" IS NOT NULL;
+
 -- =============================================================================
 -- 5. HISTORIAL DE ALERTAS Y TRIGGER DE CONFIRMACIÓN (Sección 6.4.2 y 6.4.3)
 --    Vistas: /alertas, banner de /dashboard, /salas/:id y notificaciones Telegram
@@ -346,6 +363,9 @@ CREATE INDEX IF NOT EXISTS idx_alertas_nodo ON alertas("nodoId");
 -- Una condición continua conserva una sola alerta activa por sala y variable (deduplicación estricta).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_alerta_activa_sala_variable ON alertas("salaId", variable) WHERE estado = 'activa';
 
+CREATE INDEX IF NOT EXISTS idx_nodos_presencia_plazo ON nodos ("ultimaSenalPresencia")
+WHERE "retiradoEn" IS NULL AND "ultimaSenalPresencia" IS NOT NULL;
+
 -- 5.2. Trigger `trg_confirmar_aviso_ambiental` (Sección 6.4.3 de main.tex + Deduplicación)
 CREATE OR REPLACE FUNCTION fn_procesar_ventana_telemetria()
 RETURNS TRIGGER AS $$
@@ -359,7 +379,6 @@ BEGIN
     -- A. Actualizar marca de última telemetría del nodo
     UPDATE nodos
        SET "ultimaTelemetria" = GREATEST(COALESCE("ultimaTelemetria", NEW."timestamp"), NEW."timestamp"),
-           estado = 'conectado',
            "updatedAt" = NOW()
      WHERE id = NEW."nodoId";
 
