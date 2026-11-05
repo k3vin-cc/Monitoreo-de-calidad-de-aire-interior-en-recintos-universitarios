@@ -54,5 +54,6 @@ FLUJO_DATOS_ESP32_Y_SELECCION_BD.pdf
 *.db
 firmwares/
 
-# Documentacion Markdown de uso personal: conservar solo en el equipo
+# Documentacion personal fuera de Git; README de cada componente versionados
 *.md
+!README*.md
