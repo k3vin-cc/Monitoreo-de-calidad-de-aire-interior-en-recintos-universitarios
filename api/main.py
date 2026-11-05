@@ -435,6 +435,16 @@ def persist_packet(raw: dict[str, Any]):
                     asyncio.run_coroutine_threadsafe(telegram_alerts(sala_id, alerts), hub.loop)
                 # Las resoluciones de Telegram esperan una segunda ventana de recuperación.
                 # El sondeo del bot también las retoma después de reinicios.
+            else:
+                cur.execute('SELECT "ventanaId" FROM telemetria WHERE "salaId"=%s AND "timestamp"=%s',
+                            (sala_id, packet.timestamp))
+                existing = cur.fetchone()
+                if existing and existing["ventanaId"] == packet.ventana_id and packet.ventana_id:
+                    log.info("Retransmisión duplicada: sala=%s fecha=%s ventana=%s", sala_id, packet.timestamp, packet.ventana_id)
+                else:
+                    log.warning("Conflicto de etiqueta: sala=%s fecha=%s ventana_nueva=%s ventana_existente=%s firmware=%s",
+                                sala_id, packet.timestamp, packet.ventana_id,
+                                existing["ventanaId"] if existing else None, packet.firmware_version)
             return {"tabla": "telemetria", "insertada": inserted}
         if packet.orden_registro is None:
             raise ValueError("ordenRegistro requerido cuando horaVerificada=false")
@@ -444,11 +454,11 @@ def persist_packet(raw: dict[str, Any]):
             (packet.nodo_id, sala_id, packet.orden_registro, packet.ventanas_descartadas,
              Jsonb(raw), packet.timestamp_estimado))
         inserted = cur.rowcount == 1
-        if not inserted and packet.firmware_version == "v1.0.9" and packet.timestamp_estimado:
+        if not inserted and packet.firmware_version in ("v1.0.9", "v1.0.10", "v1.0.11") and packet.timestamp_estimado:
             cur.execute('''UPDATE telemetria_tiempo_incierto SET "timestampResuelto"=%s,
                 "paqueteOriginal"=%s WHERE "nodoId"=%s AND "ordenRegistro"=%s
-                AND "paqueteOriginal"->>'firmwareVersion'='v1.0.9' AND "timestampResuelto" IS NULL''',
-                (packet.timestamp_estimado, Jsonb(raw), packet.nodo_id, packet.orden_registro))
+                AND "paqueteOriginal"->>'firmwareVersion'=%s AND "timestampResuelto" IS NULL''',
+                (packet.timestamp_estimado, Jsonb(raw), packet.nodo_id, packet.orden_registro, packet.firmware_version))
         return {"tabla": "telemetria_tiempo_incierto", "insertada": inserted}
 
 
@@ -673,6 +683,8 @@ def telegram_keyboard(rows: list[list[tuple[str, str]]]) -> str:
 
 
 async def telegram_send(chat_id: int, message: str, buttons: list[list[tuple[str, str]]] | None = None):
+    if len(message) > 4096:
+        message = message[:4035].rstrip() + "\n… Consulta la sala en la web para ver el resto."
     fields: dict[str, Any] = {"chat_id": chat_id, "text": message}
     if buttons:
         fields["reply_markup"] = telegram_keyboard(buttons)
@@ -735,7 +747,7 @@ def telegram_state_text(room: dict[str, Any]) -> str:
     lines = [title, f"Ventana: {telegram_time(timestamp)}", age_text.rstrip(),
              telegram_index("ICG · estado general", room.get("icgScore"), room.get("icgEstado")),
              telegram_index("ICAI · aire", room.get("icaiScore"), room.get("icaiEstado")),
-             telegram_index("ICT · confort", room.get("ictScore"), room.get("ictEstado")),
+             telegram_index("ICT · condición termohigrométrica", room.get("ictScore"), room.get("ictEstado")),
              "", "Mediciones de la ventana:",
              f"CO₂: {telegram_measurement(room.get('co2'), 'ppm')}",
              f"PM₂.₅: {telegram_measurement(room.get('pm25'), 'µg/m³')}",
@@ -746,8 +758,8 @@ def telegram_state_text(room: dict[str, Any]) -> str:
     if causes:
         lines.append("Causas: " + ", ".join(causes))
     recommendations = room.get("recomendaciones") or []
-    if recommendations and recommendations[0]:
-        lines.append("Recomendación: " + recommendations[0])
+    if recommendations:
+        lines.extend("Recomendación: " + recommendation for recommendation in recommendations if recommendation)
     active = fetch_all('''SELECT variable,nivel FROM alertas WHERE "salaId"=%s AND estado='activa'
         ORDER BY nivel DESC,variable''', (room["salaId"],))
     lines.append("Condiciones que requieren atención: " + (", ".join(f"{item['variable']} (nivel {item['nivel']})" for item in active) if active else "ninguna en la última ventana"))
@@ -1141,8 +1153,8 @@ def telegram_alert_text(room: dict[str, Any], alert: dict[str, Any], reading: di
         if previous:
             lines.append("La condición volvió a aparecer; la mejoría anterior no se mantuvo.")
         recommendations = (reading or {}).get("recomendaciones") or []
-        if recommendations and recommendations[0]:
-            lines.append(f"Recomendación: {recommendations[0]}")
+        if recommendations:
+            lines.extend(f"Recomendación: {recommendation}" for recommendation in recommendations if recommendation)
     received = (reading or {}).get("recibidoEn")
     if received:
         lines.append(f"Recibida: {telegram_time(received)}")
@@ -1209,10 +1221,18 @@ async def telegram_alerts(room_id: str, alerts: list[dict[str, Any]], resolved: 
                 (room_id, recipient["chatId"], recipient["usuarioId"]))
         if allowed:
             try:
-                selected = [part for part, alert_id in zip(messages, alert_ids) if alert_id in pending_ids]
-                selected_message = (f"📌 {len(selected)} avisos en la misma sala y ventana\n\n" if len(selected)>1 else "") + "\n\n".join(selected)
-                await telegram_send(recipient["chatId"], selected_message, buttons)
-                for alert_id in pending_ids:
+                selected = [(part, alert_id) for part, alert_id in zip(messages, alert_ids) if alert_id in pending_ids]
+                selected_message = (f"📌 {len(selected)} avisos en la misma sala y ventana\n\n" if len(selected)>1 else "") + "\n\n".join(part for part, _ in selected)
+                if len(selected_message) <= 4096:
+                    await telegram_send(recipient["chatId"], selected_message, buttons)
+                    sent_ids = [alert_id for _, alert_id in selected]
+                else:
+                    sent_ids = []
+                    for part, alert_id in selected:
+                        await telegram_send(recipient["chatId"], part, buttons)
+                        execute('''INSERT INTO telegram_avisos_enviados ("alertaId","chatId",tipo)
+                            VALUES (%s,%s,%s) ON CONFLICT DO NOTHING''', (alert_id, recipient["chatId"], kind))
+                for alert_id in sent_ids:
                     execute('''INSERT INTO telegram_avisos_enviados ("alertaId","chatId",tipo)
                         VALUES (%s,%s,%s) ON CONFLICT DO NOTHING''', (alert_id, recipient["chatId"], kind))
             except Exception as exc:

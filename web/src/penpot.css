@@ -345,6 +345,15 @@
 
 /* Sin panel de alertas, el resumen de calidad ocupa todo el ancho disponible. */
 .dashboardLower.dashboardSolo { grid-template-columns: 1fr; }
+/* Subniveles transmitidos por el nodo; sin dato conserva el color neutro. */
+.metric.score0 strong { color: #08785c; }
+.metric.score1 strong { color: #9c650c; }
+.metric.score2 strong { color: #b95922; }
+.metric.score3 strong { color: #b33a3a; }
+.metric.score4 strong { color: #713c80; }
+.metric.scorena strong { color: #94a6b1; }
+.recommendationList { margin: 0 0 16px; padding-left: 20px; font-size: 12px; line-height: 1.6; color: #38647a; }
+.recommendationList li + li { margin-top: 6px; }
 /* Perfil separa datos personales, permisos informativos y cambio de contraseña. */
 .profileFormPanel > .helper { margin: -4px 0 18px; }
 .profileFormPanel .formGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

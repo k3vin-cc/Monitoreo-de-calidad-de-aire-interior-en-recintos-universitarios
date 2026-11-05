@@ -555,7 +555,8 @@ SELECT
     t."icgEstado",
     t."causasICG",
     t."celdaMatriz",
-    t.recomendaciones
+    t.recomendaciones,
+    t.subniveles
 FROM salas s
 JOIN pisos p        ON p.id = s."pisoId"
 JOIN edificios edf  ON edf.id = p."edificioId"
