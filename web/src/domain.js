@@ -31,6 +31,12 @@ export function nodePresence(lastTelemetry, now=Date.now()) {
   if (!Number.isFinite(timestamp) || timestamp>now+120000) return 'sin_datos';
   return now-timestamp<12*60000 ? 'reciente' : 'sin_senal';
 }
+/** Nombre: hasRecentRoomData. Razón: impide presentar una ventana histórica como condición actual.
+ * Entradas: estado de sala de la API y hora actual en milisegundos.
+ * Salida: verdadero sólo si el nodo asignado y la ventana verificable tienen datos recientes. Efectos: ninguno. */
+export function hasRecentRoomData(state, now=Date.now()) {
+  return Boolean(state?.nodoId && nodePresence(state.ultimaTelemetria,now)==='reciente' && nodePresence(state.ventanaTimestamp,now)==='reciente');
+}
 export const NODE_CONNECTION_LABELS = {
   conectado: 'Conectado',
   no_respondio: 'No respondió',
