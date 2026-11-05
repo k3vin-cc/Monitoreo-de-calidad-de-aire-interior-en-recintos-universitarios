@@ -11,7 +11,7 @@
 #endif
 
 // Identificacion y trazabilidad de reglas (RF-12)
-#define FIRMWARE_VERSION "v1.0.10"
+#define FIRMWARE_VERSION "v1.0.11"
 #define VERSION_REGLAS   "reglas-2026.1"
 
 // MODO DE PRUEBA RAPIDA:
@@ -90,12 +90,16 @@ struct WindowEvaluation {
   bool validCo2 = false;
   bool validPm25 = false;
   bool validPm10 = false;
+  bool validPm25Cf1 = false;
+  bool validPm10Cf1 = false;
   bool validTemp = false;
   bool validRh = false;
 
   float meanCo2 = 0.0f;
   float meanPm25 = 0.0f;
   float meanPm10 = 0.0f;
+  float meanPm25Cf1 = 0.0f;
+  float meanPm10Cf1 = 0.0f;
   float meanTemp = 0.0f;
   float meanRh = 0.0f;
 
@@ -130,7 +134,7 @@ struct WindowEvaluation {
   int numCausasICG = 0;
 
   String celdaMatriz = "";
-  String recomendaciones[6];
+  String recomendaciones[8];
   int numRecomendaciones = 0;
 };
 

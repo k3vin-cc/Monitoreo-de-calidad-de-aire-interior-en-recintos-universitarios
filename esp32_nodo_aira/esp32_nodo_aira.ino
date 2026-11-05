@@ -90,9 +90,12 @@ struct NodeConfig {
 // Lecturas instantaneas de los sensores (actualizadas de forma continua)
 struct PmsData {
   bool valid = false;
+  bool cf1Valid = false;
   uint16_t pm1 = 0;
   uint16_t pm25 = 0;
   uint16_t pm10 = 0;
+  uint16_t pm25Cf1 = 0;
+  uint16_t pm10Cf1 = 0;
   unsigned long atMs = 0;
 } pms;
 
@@ -109,11 +112,15 @@ struct WindowAccumulator {
   double sumCo2 = 0.0;
   double sumPm25 = 0.0;
   double sumPm10 = 0.0;
+  double sumPm25Cf1 = 0.0;
+  double sumPm10Cf1 = 0.0;
   double sumTemp = 0.0;
   double sumRh = 0.0;
   int nCo2 = 0;
   int nPm25 = 0;
   int nPm10 = 0;
+  int nPm25Cf1 = 0;
+  int nPm10Cf1 = 0;
   int nTemp = 0;
   int nRh = 0;
   int totalTicks = 0;
@@ -121,8 +128,8 @@ struct WindowAccumulator {
   int fueraRangoCo2 = 0, fueraRangoTemp = 0, fueraRangoRh = 0;
 
   void reset() {
-    sumCo2 = sumPm25 = sumPm10 = sumTemp = sumRh = 0.0;
-    nCo2 = nPm25 = nPm10 = nTemp = nRh = 0;
+    sumCo2 = sumPm25 = sumPm10 = sumPm25Cf1 = sumPm10Cf1 = sumTemp = sumRh = 0.0;
+    nCo2 = nPm25 = nPm10 = nPm25Cf1 = nPm10Cf1 = nTemp = nRh = 0;
     totalTicks = 0;
     sinLecturaScd = sinLecturaPms = 0;
     fueraRangoCo2 = fueraRangoTemp = fueraRangoRh = 0;
@@ -143,6 +150,10 @@ struct PreviousWindowState {
 
 // Estado de tiempos, errores y buffer circular LittleFS
 bool scdRunning = false;
+bool scdOffsetKnown = false;
+float scdOffsetC = 0.0f;
+bool scdAscKnown = false;
+bool scdAscEnabled = false;
 uint8_t pmsFrame[32];
 uint8_t pmsIndex = 0;
 unsigned long pmsChecksumErrors = 0;
@@ -154,6 +165,7 @@ unsigned long lastScdPollMs      = 0;
 unsigned long lastScdRetryMs     = 0;
 unsigned long lastSampleTickMs   = 0;
 unsigned long lastWindowCloseMs  = 0;
+unsigned long bootStartedMs      = 0;
 unsigned long lastDisplayMs      = 0;
 unsigned long lastNtpSyncMs      = 0;
 
@@ -166,6 +178,9 @@ unsigned long lastDegradedTryMs  = 0;
 // Estado de sincronizacion NTP
 bool ntpSynced                   = false;
 bool firstWindowDiscarded        = false;
+bool awaitingUtcWindowStart      = false;
+time_t utcWindowStartEpoch       = 0;
+time_t utcWindowEndEpoch         = 0;
 uint32_t bootSession             = 0;
 
 // Estado del cliente MQTTS / WSS (ESP-IDF esp_mqtt_client)
@@ -243,12 +258,19 @@ void acceptPmsFrame() {
   uint16_t pm1  = wordBE(&pmsFrame[10]);
   uint16_t pm25 = wordBE(&pmsFrame[12]);
   uint16_t pm10 = wordBE(&pmsFrame[14]);
+  uint16_t pm25Cf1 = wordBE(&pmsFrame[6]);
+  uint16_t pm10Cf1 = wordBE(&pmsFrame[8]);
 
   // Validacion de rango fisico
   if (pm25 <= 2000 && pm10 <= 3000) {
     pms.pm1   = pm1;
     pms.pm25  = pm25;
     pms.pm10  = pm10;
+    pms.cf1Valid = pm25Cf1 <= 2000 && pm10Cf1 <= 3000;
+    if (pms.cf1Valid) {
+      pms.pm25Cf1 = pm25Cf1;
+      pms.pm10Cf1 = pm10Cf1;
+    }
     pms.atMs  = millis();
     pms.valid = true;
   } else {
@@ -309,10 +331,41 @@ bool scdReadBytes(uint8_t *out, size_t n) {
   return true;
 }
 
+/**
+ * Nombre   : readScdCalibration
+ * Razón    : Registra los ajustes reales sin modificar la calibración del sensor.
+ * Entradas : SCD40 detenido por startScd() y bus I2C inicializado.
+ * Salida   : Estado leído en las variables de calibración; fallo = no leído.
+ * Efectos  : Ninguno en la memoria del SCD40.
+ */
+void readScdCalibration() {
+  scdOffsetKnown = false;
+  scdAscKnown = false;
+  uint8_t response[3];
+  if (scdCommand(0x2318)) {
+    delay(1);
+    if (scdReadBytes(response, sizeof(response))) {
+      scdOffsetC = static_cast<float>(wordBE(response)) * 175.0f / 65535.0f;
+      scdOffsetKnown = true;
+    }
+  }
+  if (scdCommand(0x2313)) {
+    delay(1);
+    if (scdReadBytes(response, sizeof(response)) && wordBE(response) <= 1) {
+      scdAscEnabled = wordBE(response) == 1;
+      scdAscKnown = true;
+    }
+  }
+  Serial.printf("[HAL] SCD40: offset=%s, ASC=%s\n",
+                scdOffsetKnown ? String(scdOffsetC, 2).c_str() : "no_leido",
+                scdAscKnown ? (scdAscEnabled ? "activada" : "desactivada") : "no_leida");
+}
+
 void startScd() {
   // Recupera un SCD40 que siga midiendo tras reiniciar solo el ESP32.
   scdCommand(0x3F86);  // stop_periodic_measurement
   delay(500);
+  readScdCalibration();
   scdRunning = scdCommand(0x21B1);  // start_periodic_measurement
   lastScdRetryMs = millis();
   Serial.println(scdRunning ? "[HAL] SCD40: modo periodico iniciado" : "[HAL] SCD40: no responde");
@@ -446,28 +499,26 @@ void sampleSensorsTick(unsigned long now) {
     winAcc.nPm25++;
     winAcc.sumPm10 += pms.pm10;
     winAcc.nPm10++;
+    if (pms.cf1Valid) {
+      winAcc.sumPm25Cf1 += pms.pm25Cf1;
+      winAcc.sumPm10Cf1 += pms.pm10Cf1;
+      winAcc.nPm25Cf1++;
+      winAcc.nPm10Cf1++;
+    }
   } else {
     ++winAcc.sinLecturaPms;
   }
 }
 
-// Obtiene marca de tiempo UTC verificada por NTP y redondeada al borde de 5 minutos
-// para cumplir con el trigger SQL `trg_confirmar_aviso_ambiental` (INTERVAL '5 minutes')
-bool getVerifiedWindowIsoTimestamp(String &outIso) {
+// El borde recibido coincide con el cierre real de la ventana alineada.
+bool getVerifiedWindowIsoTimestamp(String &outIso, time_t endEpoch) {
   if (!ntpSynced) return false;
-  time_t nowEpoch = time(nullptr);
-  if (nowEpoch < 1700000000L) { // Anterior a Nov 2023 -> reloj RTC aun no valido
+  if (endEpoch < 1700000000L) { // Anterior a Nov 2023 -> reloj RTC aun no valido
     ntpSynced = false;
     return false;
   }
-#if MODO_PRUEBA_RAPIDA == 0
-  // Alineacion al multiplo de 300 s (5 minutos) mas cercano
-  time_t aligned = ((nowEpoch + 150) / 300) * 300;
-#else
-  time_t aligned = nowEpoch;
-#endif
   struct tm timeinfo;
-  gmtime_r(&aligned, &timeinfo);
+  gmtime_r(&endEpoch, &timeinfo);
   char buf[32];
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
   outIso = String(buf);
@@ -475,7 +526,7 @@ bool getVerifiedWindowIsoTimestamp(String &outIso) {
 }
 
 void addUniqueRecommendation(WindowEvaluation &ev, const String &msg) {
-  if (msg.length() == 0 || ev.numRecomendaciones >= 6) return;
+  if (msg.length() == 0 || ev.numRecomendaciones >= 8) return;
   for (int i = 0; i < ev.numRecomendaciones; ++i) {
     if (ev.recomendaciones[i] == msg) return;
   }
@@ -491,7 +542,7 @@ bool causeInPrevWindow(const String &cause) {
 }
 
 // Evalua la ventana de 5 minutos conforme a la Seccion 6.5 de main.tex
-WindowEvaluation evaluateCurrentWindow() {
+WindowEvaluation evaluateCurrentWindow(time_t endEpoch) {
   WindowEvaluation ev;
   ev.hasWindow = true;
 
@@ -516,7 +567,7 @@ WindowEvaluation evaluateCurrentWindow() {
   ev.lecturasScdFallidas = scdReadErrors - lastScdReadErrors;
 
   // Verificar hora UTC via NTP
-  ev.horaVerificada = getVerifiedWindowIsoTimestamp(ev.timestampIso);
+  ev.horaVerificada = getVerifiedWindowIsoTimestamp(ev.timestampIso, endEpoch);
 
   // Conteos validos por serie
   ev.nCo2  = winAcc.nCo2;
@@ -540,6 +591,14 @@ WindowEvaluation evaluateCurrentWindow() {
     ev.validPm10 = true;
     ev.meanPm10  = static_cast<float>(winAcc.sumPm10 / ev.nPm10);
     ev.sPm10     = calcSeverityPm(ev.meanPm10, 45.0f);
+  }
+  if (winAcc.nPm25Cf1 >= WINDOW_MIN_VALID) {
+    ev.validPm25Cf1 = true;
+    ev.meanPm25Cf1 = static_cast<float>(winAcc.sumPm25Cf1 / winAcc.nPm25Cf1);
+  }
+  if (winAcc.nPm10Cf1 >= WINDOW_MIN_VALID) {
+    ev.validPm10Cf1 = true;
+    ev.meanPm10Cf1 = static_cast<float>(winAcc.sumPm10Cf1 / winAcc.nPm10Cf1);
   }
   if (ev.nTemp >= WINDOW_MIN_VALID) {
     ev.validTemp = true;
@@ -713,7 +772,7 @@ WindowEvaluation evaluateCurrentWindow() {
 // Serializa el paquete JSON exactamente con el esquema esperado por `TelemetryPacket` en api/main.py
 String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
   String p;
-  p.reserve(2300);
+  p.reserve(2500);
   p += "{";
   p += "\"nodoId\":\"" + jsonEscape(cfg.nodoId) + "\",";
   p += "\"salaId\":\"" + jsonEscape(cfg.salaId) + "\",";
@@ -739,6 +798,8 @@ String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
   p += "\"co2\":" + (ev.validCo2 ? String(ev.meanCo2, 8) : String("null")) + ",";
   p += "\"pm25\":" + (ev.validPm25 ? String(ev.meanPm25, 8) : String("null")) + ",";
   p += "\"pm10\":" + (ev.validPm10 ? String(ev.meanPm10, 8) : String("null")) + ",";
+  p += "\"pm25Cf1\":" + (ev.validPm25Cf1 ? String(ev.meanPm25Cf1, 8) : String("null")) + ",";
+  p += "\"pm10Cf1\":" + (ev.validPm10Cf1 ? String(ev.meanPm10Cf1, 8) : String("null")) + ",";
   p += "\"temperatura\":" + (ev.validTemp ? String(ev.meanTemp, 8) : String("null")) + ",";
   p += "\"humedad\":" + (ev.validRh ? String(ev.meanRh, 8) : String("null")) + "},";
   p += "\"subniveles\":{";
@@ -757,7 +818,11 @@ String buildTelemetryJson(const WindowEvaluation &ev, bool esRetransmision) {
   p += "\"pm25\":{\"sinLectura\":" + String(ev.sinLecturaPms) + ",\"tramaInvalida\":" + String(ev.tramasPmsInvalidas) + ",\"fueraRango\":" + String(pmsRangeErrors - lastPmsRangeErrors) + "},";
   p += "\"pm10\":{\"sinLectura\":" + String(ev.sinLecturaPms) + ",\"tramaInvalida\":" + String(ev.tramasPmsInvalidas) + ",\"fueraRango\":" + String(pmsRangeErrors - lastPmsRangeErrors) + "},";
   p += "\"scd40ErroresLectura\":" + String(ev.lecturasScdFallidas) + "},";
-  p += "\"calibracion\":{\"versionConfiguracion\":\"" + String(FIRMWARE_VERSION) + "\",\"compensacionTermicaFirmwareC\":0,\"compensacionSensorC\":null,\"calibracionInternaSensor\":\"no_leida\"},";
+  p += "\"calibracion\":{\"versionConfiguracion\":\"" + String(FIRMWARE_VERSION) + "\",\"compensacionTermicaFirmwareC\":0,\"compensacionSensorC\":";
+  p += scdOffsetKnown ? String(scdOffsetC, 3) : String("null");
+  p += ",\"calibracionInternaSensor\":\"";
+  p += scdAscKnown ? (scdAscEnabled ? "ASC_activada" : "ASC_desactivada") : "no_leida";
+  p += "\"},";
   p += "\"conteosValidos\":{";
   p += "\"co2\":" + String(ev.nCo2) + ",";
   p += "\"pm25\":" + String(ev.nPm25) + ",";
@@ -1499,8 +1564,10 @@ void drawDisplay(unsigned long now) {
   tft.setTextSize(1);
   tft.setCursor(12, 226);
   tft.setTextColor(mutedColor);
-  if (!firstWindowDiscarded) {
-    unsigned long remaining = (WINDOW_DURATION_MS - (now - lastWindowCloseMs)) / 1000UL;
+  if (!firstWindowDiscarded || awaitingUtcWindowStart) {
+    unsigned long remaining = awaitingUtcWindowStart
+      ? static_cast<unsigned long>(utcWindowStartEpoch > time(nullptr) ? utcWindowStartEpoch - time(nullptr) : 0)
+      : (WINDOW_DURATION_MS > now - bootStartedMs ? WINDOW_DURATION_MS - (now - bootStartedMs) : 0) / 1000UL;
     tft.printf("ESTABILIZANDO %lus", remaining);
   } else {
     tft.printf("MUESTRAS %d/%d  BUF %d", winAcc.totalTicks, WINDOW_MAX_SAMPLES, bufCount);
@@ -1513,6 +1580,27 @@ void drawDisplay(unsigned long now) {
 // -----------------------------------------------------------------------------
 // 10. EJECUCION DE LA MAQUINA DE ESTADOS FINITOS (SECCION 6.7.2)
 // -----------------------------------------------------------------------------
+/**
+ * Nombre   : scheduleUtcWindowStart
+ * Razón    : Inicia la siguiente ventana completa en un borde UTC tras NTP.
+ * Entradas : Hora verificada y tiempo monotónico del arranque actual.
+ * Salida   : Borde de inicio y fin previstos para una ventana completa.
+ * Efectos  : Descarta sólo el acumulador parcial; conserva la cola LittleFS.
+ */
+void scheduleUtcWindowStart(time_t epoch, unsigned long nowMs) {
+  const unsigned long elapsedBoot = nowMs - bootStartedMs;
+  const unsigned long remainingBoot = elapsedBoot < WINDOW_DURATION_MS ? WINDOW_DURATION_MS - elapsedBoot : 0;
+  const time_t earliest = epoch + static_cast<time_t>((remainingBoot + 999UL) / 1000UL);
+  const time_t period = static_cast<time_t>(WINDOW_DURATION_MS / 1000UL);
+  utcWindowStartEpoch = ((earliest + period - 1) / period) * period;
+  utcWindowEndEpoch = utcWindowStartEpoch + period;
+  awaitingUtcWindowStart = true;
+  lastWindowCloseMs = nowMs;
+  winAcc.reset();
+  Serial.printf("[VENTANA UTC] Se descarta ventana parcial; inicio=%lld fin=%lld\n",
+                static_cast<long long>(utcWindowStartEpoch), static_cast<long long>(utcWindowEndEpoch));
+}
+
 void runConnectivityFsm(unsigned long now) {
   switch (fsmState) {
     case INIT_SYS: {
@@ -1568,6 +1656,7 @@ void runConnectivityFsm(unsigned long now) {
       if (getLocalTime(&timeinfo, 200)) {
         time_t epoch = time(nullptr);
         if (epoch >= 1700000000L) {
+          if (!ntpSynced) scheduleUtcWindowStart(epoch, now);
           ntpSynced     = true;
           lastNtpSyncMs = now;
           saveTimeAnchor(epoch, esp_timer_get_time());
@@ -1660,7 +1749,43 @@ void runConnectivityFsm(unsigned long now) {
 // 11. CIERRE DE VENTANA DE 5 MINUTOS Y DESPACHO MQTTS / LITTLEFS
 // -----------------------------------------------------------------------------
 void processFiveMinuteWindow(unsigned long now) {
-  if (now - lastWindowCloseMs < WINDOW_DURATION_MS) return;
+  time_t closingEpoch = 0;
+  if (ntpSynced) {
+    const time_t currentEpoch = time(nullptr);
+    if (currentEpoch < 1700000000L) {
+      ntpSynced = false;
+      awaitingUtcWindowStart = false;
+      utcWindowEndEpoch = 0;
+      lastWindowCloseMs = now;
+      winAcc.reset();
+      Serial.println("[VENTANA UTC] Reloj inválido; se descarta ventana parcial.");
+      return;
+    }
+    if (awaitingUtcWindowStart) {
+      if (currentEpoch < utcWindowStartEpoch) return;
+      awaitingUtcWindowStart = false;
+      firstWindowDiscarded = true;
+      lastWindowCloseMs = now;
+      winAcc.reset();
+      Serial.println("[VENTANA UTC] Comienza ventana completa en borde UTC.");
+      return;
+    }
+    if (currentEpoch < utcWindowEndEpoch) {
+      if (now - lastWindowCloseMs > WINDOW_DURATION_MS + 10000UL)
+        scheduleUtcWindowStart(currentEpoch, now);
+      return;
+    }
+    const unsigned long elapsed = now - lastWindowCloseMs;
+    if (currentEpoch > utcWindowEndEpoch + 2 || elapsed < WINDOW_DURATION_MS - 10000UL || elapsed > WINDOW_DURATION_MS + 10000UL) {
+      scheduleUtcWindowStart(currentEpoch, now);
+      return;
+    }
+    closingEpoch = utcWindowEndEpoch;
+    utcWindowStartEpoch = closingEpoch;
+    utcWindowEndEpoch += static_cast<time_t>(WINDOW_DURATION_MS / 1000UL);
+  } else if (now - lastWindowCloseMs < WINDOW_DURATION_MS) {
+    return;
+  }
   const unsigned long elapsedMs = now - lastWindowCloseMs;
   lastWindowCloseMs = now;
 
@@ -1675,7 +1800,7 @@ void processFiveMinuteWindow(unsigned long now) {
     return;
   }
 
-  WindowEvaluation ev = evaluateCurrentWindow();
+  WindowEvaluation ev = evaluateCurrentWindow(closingEpoch);
   ev.duracionVentanaMs = elapsedMs;
   if (ev.horaVerificada) {
     const time_t endEpoch = time(nullptr);
@@ -1744,6 +1869,7 @@ void setup() {
                 cfg.nodoId.c_str(), cfg.salaId.c_str(), cfg.wifiSsid.c_str(), bufCount, BUFFER_CAPACITY);
 
   unsigned long now = millis();
+  bootStartedMs      = now;
   lastSampleTickMs  = now;
   lastWindowCloseMs = now;
   lastDisplayMs     = 0;
