@@ -454,11 +454,11 @@ def persist_packet(raw: dict[str, Any]):
             (packet.nodo_id, sala_id, packet.orden_registro, packet.ventanas_descartadas,
              Jsonb(raw), packet.timestamp_estimado))
         inserted = cur.rowcount == 1
-        if not inserted and packet.firmware_version in ("v1.0.9", "v1.0.10", "v1.0.11", "v1.0.11.1") and packet.timestamp_estimado:
+        if not inserted and packet.timestamp_estimado:
             cur.execute('''UPDATE telemetria_tiempo_incierto SET "timestampResuelto"=%s,
                 "paqueteOriginal"=%s WHERE "nodoId"=%s AND "ordenRegistro"=%s
-                AND "paqueteOriginal"->>'firmwareVersion'=%s AND "timestampResuelto" IS NULL''',
-                (packet.timestamp_estimado, Jsonb(raw), packet.nodo_id, packet.orden_registro, packet.firmware_version))
+                AND "timestampResuelto" IS NULL''',
+                (packet.timestamp_estimado, Jsonb(raw), packet.nodo_id, packet.orden_registro))
         return {"tabla": "telemetria_tiempo_incierto", "insertada": inserted}
 
 

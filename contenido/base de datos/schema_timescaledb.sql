@@ -323,15 +323,8 @@ CREATE INDEX IF NOT EXISTS idx_telemetria_incierta_pendiente
     WHERE "migradoATelemetria" = FALSE;
 
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v109_nodo_orden
-ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
-WHERE "paqueteOriginal"->>'firmwareVersion' = 'v1.0.9';
-CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v110_v111_nodo_orden
-ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
-WHERE "paqueteOriginal"->>'firmwareVersion' IN ('v1.0.10', 'v1.0.11');
-CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_v1111_nodo_orden
-ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro")
-WHERE "paqueteOriginal"->>'firmwareVersion' = 'v1.0.11.1';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incierto_nodo_orden_global
+ON telemetria_tiempo_incierto ("nodoId", "ordenRegistro");
 CREATE INDEX IF NOT EXISTS idx_incierto_sala_fecha_estimada
 ON telemetria_tiempo_incierto ("salaId", "timestampResuelto" DESC)
 WHERE "timestampResuelto" IS NOT NULL;

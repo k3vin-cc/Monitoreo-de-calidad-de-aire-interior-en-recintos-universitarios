@@ -1780,7 +1780,7 @@ void processFiveMinuteWindow(unsigned long now) {
       return;
     }
     const unsigned long elapsed = now - lastWindowCloseMs;
-    if (currentEpoch > utcWindowEndEpoch + 20 || elapsed < WINDOW_DURATION_MS - 10000UL || elapsed > WINDOW_DURATION_MS + 20000UL) {
+    if (currentEpoch > utcWindowEndEpoch + 20 || elapsed < WINDOW_DURATION_MS - 20000UL || elapsed > WINDOW_DURATION_MS + 20000UL) {
       ++ventanasDescartadas;
       prefs.putUInt("win_drop", ventanasDescartadas);
       Serial.println("[VENTANA UTC] Ventana descartada por atraso o salto del reloj.");

@@ -11,7 +11,7 @@
 #endif
 
 // Identificacion y trazabilidad de reglas (RF-12)
-#define FIRMWARE_VERSION "v1.0.11.1"
+#define FIRMWARE_VERSION "v1.0.11.2"
 #define VERSION_REGLAS   "reglas-2026.1"
 
 // MODO DE PRUEBA RAPIDA:

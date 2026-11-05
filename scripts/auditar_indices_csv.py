@@ -38,7 +38,7 @@ def datos_de_fila(fila: dict[str, str]) -> dict[str, float | None]:
         texto = precisas.get(nombre)
         if texto is None:
             texto = fila.get(nombre)
-        datos[nombre] = float(texto) if texto and int(conteos.get(nombre, 0)) >= 24 else None
+        datos[nombre] = float(texto) if texto is not None and texto != "" and int(conteos.get(nombre, 0)) >= 24 else None
     return datos
 
 
