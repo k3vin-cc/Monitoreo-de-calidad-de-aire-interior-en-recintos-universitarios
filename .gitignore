@@ -53,3 +53,6 @@ FLUJO_DATOS_ESP32_Y_SELECCION_BD.pdf
 *.sqlite
 *.db
 firmwares/
+
+# Documentacion Markdown de uso personal: conservar solo en el equipo
+*.md
