@@ -129,6 +129,10 @@
 .historyPage input,.historyPage select { width:100%; min-width:0; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; }
 .historyPage .historyPeriods { margin:14px 0; flex-wrap:wrap; }
 .historyPage button { width:auto; }
+.historyPage .historyLoadingApplied,.historyPage .historyApplied { min-height:175px; }
+.historyPage .historyLoadingChart { min-height:305px; }
+.historyPage .historyLoadingSummary { min-height:280px; }
+.historyPage .historyLoadingTable { min-height:400px; }
 .historyPage .historyApplied p { margin:8px 0; }
 .historyPage .historyApplied small { display:block; margin-top:10px; color:#5f7889; }
 .historyPage .historyPages { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:13px; }

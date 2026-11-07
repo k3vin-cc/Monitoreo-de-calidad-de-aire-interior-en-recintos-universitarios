@@ -201,7 +201,14 @@ export default function HistoryPage({
           setTo(end);
           setPeriod('custom');
           setDateDialog(false);
-        }} />}<p className="helper">Fechas en {Intl.DateTimeFormat().resolvedOptions().timeZone}. Las horas estimadas se identifican; las ventanas sin fecha quedan fuera del gráfico.</p></form>{changed && <p role="status">Filtros modificados. Pulsa Consultar para actualizar los resultados.</p>}{error && <div className="notice error" role="alert">{error}</div>}</section>{applied && <section className="panel historyApplied"><b>{applied.name}</b><p>{formatDate(applied.desde, {
+        }} />}<p className="helper">Fechas en {Intl.DateTimeFormat().resolvedOptions().timeZone}. Las horas estimadas se identifican; las ventanas sin fecha quedan fuera del gráfico.</p></form>{changed && <p role="status">Filtros modificados. Pulsa Consultar para actualizar los resultados.</p>}{error && <div className="notice error" role="alert">{error}</div>}</section>{busy && !applied && <>
+        <section className="panel historyLoadingApplied" role="status" aria-live="polite">
+          <b>Consultando histórico…</b><p>Preparando las mediciones del período.</p>
+        </section>
+        <section className="panel chartPanel historyLoadingChart" aria-hidden="true"><h2>Evolución de las mediciones</h2></section>
+        <section className="panel historyLoadingSummary" aria-hidden="true"><h2>Resumen del período completo</h2></section>
+        <section className="panel historyLoadingTable" aria-hidden="true"><h2>Ventanas consultadas</h2></section>
+      </>}{applied && <section className="panel historyApplied"><b>{applied.name}</b><p>{formatDate(applied.desde, {
           dateStyle: 'medium',
           timeStyle: 'short'
         })} — {formatDate(applied.hasta, {
