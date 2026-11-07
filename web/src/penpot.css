@@ -387,3 +387,21 @@
   .profileActions { flex-direction: column-reverse; }
   .profileActions button { width: 100%; }
 }
+.historyPage .historyPickerRow { display:grid; grid-template-columns:minmax(0,2fr) minmax(180px,1fr) auto; gap:14px; align-items:start; }
+.historyPage .historyRoomField { position:relative; min-width:0; }
+.historyPage .historyPickerRow > button { margin-top:25px; }
+.historyDateDialog { width:min(900px,100%); }
+.historyDateDialog::backdrop { background:rgba(15,43,58,.48); }
+.historyCalendars { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.historyCalendar { min-width:0; padding:14px; border:1px solid #d5e2e9; border-radius:10px; }
+.historyCalendar h3 { margin:0 0 10px; }
+.historyCalendarNav { display:grid; grid-template-columns:2fr 1fr; gap:10px; }
+.historyCalendar label { display:flex; flex-direction:column; gap:6px; font-size:13px; }
+.historyCalendar input,.historyCalendar select { width:100%; min-width:0; padding:8px; border:1px solid #b5c8d5; border-radius:8px; }
+.historyCalendarGrid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; margin:12px 0; text-align:center; }
+.historyCalendarGrid b { font-size:12px; color:#5f7889; }
+.historyCalendarGrid button { min-width:0; padding:7px 0; border:0; border-radius:6px; background:transparent; cursor:pointer; }
+.historyCalendarGrid button:hover { background:#eaf5fa; }
+.historyCalendarGrid button.selected { background:#006da4; color:white; }
+.historyCalendar small { display:block; margin-top:8px; }
+@media(max-width:760px) { .historyPage .historyPickerRow,.historyCalendars { grid-template-columns:1fr; } .historyPage .historyPickerRow > button { margin-top:0; } }

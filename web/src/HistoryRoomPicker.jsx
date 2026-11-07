@@ -12,7 +12,7 @@ function normalized(value){return String(value||'').toLocaleLowerCase('es').norm
 /** Nombre: HistoryRoomPicker. Razón: localizar una sala por ubicación o por nombre de nodo.
  * Entradas: salas autorizadas, sala elegida y cambio. Salida: filtros encadenados y búsqueda acotada.
  * Efectos: consulta de búsqueda de solo lectura y cambio local de sala. */
-export default function HistoryRoomPicker({rooms,value,onChange,disabled}){
+export default function HistoryRoomPicker({rooms,value,onChange,disabled,children}){
  const [sector,setSector]=useState(''),[building,setBuilding]=useState(''),[floor,setFloor]=useState('');
  const [open,setOpen]=useState(false),[query,setQuery]=useState(''),[active,setActive]=useState(-1);
  const [remote,setRemote]=useState({status:'idle',query:'',rooms:[]}),[retry,setRetry]=useState(0);
@@ -53,7 +53,7 @@ export default function HistoryRoomPicker({rooms,value,onChange,disabled}){
      <label>Edificio<select value={building} disabled={disabled||!sector} onChange={event=>changeScope('building',event.target.value)}><option value="">Todos</option>{buildings.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
      <label>Piso<select value={floor} disabled={disabled||!building} onChange={event=>changeScope('floor',event.target.value)}><option value="">Todos</option>{floors.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
    </div>
-   <label htmlFor={id}>Sala o nodo</label>
+   <div className="historyPickerRow"><div className="historyRoomField"><label htmlFor={id}>Sala o nodo</label>
    <div className="historyRoomInput"><input id={id} ref={input} role="combobox" aria-expanded={open} aria-controls={id+'-list'} aria-autocomplete="list" aria-activedescendant={open&&active>=0?id+'-'+active:undefined} disabled={disabled} value={open?query:selected?.nombre||''} onFocus={()=>{setOpen(true);setQuery('');setActive(-1)}} onChange={event=>{setQuery(event.target.value);setOpen(true);setActive(-1)}} onKeyDown={keyboard} placeholder={disabled?'Cargando salas…':'Buscar sala, nodo o ubicación…'}/><button type="button" disabled={disabled} aria-label={open?'Cerrar opciones de sala':'Abrir opciones de sala'} onClick={()=>{if(open)setOpen(false);else{setQuery('');setActive(-1);setOpen(true);input.current?.focus()}}} tabIndex={-1}>⌄</button></div>
    <small>{selected?`${roomPath(selected)} · Histórico completo de la sala`:'Escribe dos caracteres para buscar un nodo. Solo ayuda a encontrar la sala; el histórico incluye todos sus nodos.'}</small>
    {open&&<div className="historyRoomOptions"><ul id={id+'-list'} role="listbox" aria-label="Salas disponibles">{visible.map((room,index)=><li key={room.id} id={id+'-'+index} role="option" aria-selected={room.id===value} className={active===index?'active':''} onMouseDown={event=>event.preventDefault()} onClick={()=>choose(room)}><b>{room.nombre}</b><small>{[room.sectorNombre,room.edificioNombre,room.pisoNombre].filter(Boolean).join(' › ')}</small></li>)}</ul>
@@ -63,6 +63,6 @@ export default function HistoryRoomPicker({rooms,value,onChange,disabled}){
      {!visible.length&&term.length>=2&&remote.status==='ready'&&remote.query===term&&<p>No se encontraron salas. Prueba con otro nombre.</p>}
      {term.length<2&&local.length>30&&<p>Mostrando 30 de {local.length}. Escribe para acotar.</p>}
      {term.length>=2&&remote.status==='ready'&&remote.query===term&&remote.rooms.length===30&&<p>Mostrando los primeros 30 resultados. Escribe más para acotar.</p>}
-   </div>}
+   </div>}</div>{children}</div>
  </div>;
 }
