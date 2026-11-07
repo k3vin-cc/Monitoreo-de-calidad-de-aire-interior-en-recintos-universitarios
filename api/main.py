@@ -1937,8 +1937,19 @@ def search_history_rooms(q: str = Query(min_length=2, max_length=100),
         raise HTTPException(422, "Escribe al menos dos caracteres")
     scope, scope_params = scoped_sql("p", user)
     pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    return find_history_rooms(pattern, sectorId, edificioId, pisoId, scope, scope_params)
+
+
+def find_history_rooms(pattern: str, sectorId: str | None, edificioId: str | None, pisoId: str | None, scope: str, scope_params: tuple):
+    """
+    Nombre   : find_history_rooms
+    Razón    : Consulta salas por ubicación o nodos actuales e históricos.
+    Entradas : patrón, filtros y ámbito autorizados por el endpoint.
+    Salida   : hasta 30 salas coincidentes.
+    Efectos  : Solo lectura de PostgreSQL.
+    """
     return fetch_all('''WITH nodos_coincidentes AS MATERIALIZED (
-            SELECT id,"salaId" FROM nodos WHERE nombre ILIKE %s
+            SELECT id,"salaId" FROM nodos WHERE translate(lower(nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
         )
         SELECT s.id,s.nombre,s."pisoId",p.nombre AS "pisoNombre",
                p."edificioId",ed.nombre AS "edificioNombre",
@@ -1951,8 +1962,8 @@ def search_history_rooms(q: str = Query(min_length=2, max_length=100),
           AND (%s::text IS NULL OR ed."sectorId"=%s::text)
           AND (%s::text IS NULL OR ed.id=%s::text)
           AND (%s::text IS NULL OR p.id=%s::text)'''+scope+'''
-          AND (s.nombre ILIKE %s OR p.nombre ILIKE %s
-               OR ed.nombre ILIKE %s OR sec.nombre ILIKE %s
+          AND (translate(lower(s.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu') OR translate(lower(p.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
+               OR translate(lower(ed.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu') OR translate(lower(sec.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
                OR EXISTS (
                    SELECT 1 FROM nodos_coincidentes n
                    WHERE n."salaId"=s.id
