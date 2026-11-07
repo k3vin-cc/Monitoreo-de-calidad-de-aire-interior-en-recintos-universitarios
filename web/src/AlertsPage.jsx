@@ -79,7 +79,7 @@ export default function AlertsPage() {
   const [node, setNode] = useState(null), [pickerKey, setPickerKey] = useState(0);
   const [result, setResult] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(true);
   const [dialog, setDialog] = useState(false), [downloading, setDownloading] = useState(''), [now, setNow] = useState(Date.now());
-  const request = useRef(0), refreshTimer = useRef(null), visibleRooms = useRef(new Set()), downloadLock = useRef(false);
+  const request = useRef(0), inFlight = useRef(0), pendingRefresh = useRef(false), refreshTimer = useRef(null), visibleRooms = useRef(new Set()), downloadLock = useRef(false);
   useEffect(() => {
     let active = true;
     api.rooms({}).then(data => { if (active) setRooms(data); }).catch(e => { if (active) setRoomsError(e.message); }).finally(() => { if (active) setRoomsLoading(false); });
@@ -87,18 +87,28 @@ export default function AlertsPage() {
   }, []);
   /** Nombre: refresh. Razón: consultar sin mostrar respuestas antiguas. Entradas: filtros y página.
    * Salida: resultados o error. Efectos: lectura de API y estado local. */
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (quiet = false) => {
     const revision = ++request.current;
-    setBusy(true); setError(''); setResult(null);
+    inFlight.current = revision;
+    setBusy(true); setError(''); if (!quiet) setResult(null);
     try {
-      const response = await api.alertsPage({ ...queryFilters(filters), pagina: page });
+      const response = await api.alertsPage({ ...queryFilters(filters), pagina: page, tamano: 10 });
       if (revision === request.current) { setResult(response); visibleRooms.current = new Set(response.alertas.map(a => a.salaId)); }
     } catch (e) { if (revision === request.current) setError(e.message); }
-    finally { if (revision === request.current) setBusy(false); }
+    finally {
+      if (inFlight.current === revision) inFlight.current = 0;
+      if (revision === request.current) {
+        setBusy(false);
+        if (pendingRefresh.current) {
+          pendingRefresh.current = false;
+          refreshTimer.current = setTimeout(() => refresh(true), 1200);
+        }
+      }
+    }
   }, [filters, page]);
   useEffect(() => { const timer = setTimeout(refresh, 250); return () => { clearTimeout(timer); request.current++; }; }, [refresh]);
   useEffect(() => {
-    const schedule = () => { clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(refresh, 1200); };
+    const schedule = () => { if (inFlight.current) { pendingRefresh.current = true; return; } clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(() => refresh(true), 1200); };
     const offEvent = live.subscribe(event => { if (event.tipo === 'alerta' || (event.tipo === 'ventana' && visibleRooms.current.has(event.salaId))) schedule(); });
     let previous = live.status;
     const offStatus = live.subscribeStatus(status => { if (status === 'connected' && previous !== 'connected') schedule(); previous = status; });
@@ -124,7 +134,7 @@ export default function AlertsPage() {
   }
   const end = new Date(), start = new Date(end.getTime() - 86400000);
   return <div className="alertsPage">
-    <div className="pageHeading"><div><span className="eyebrow">OPERACIÓN / 08</span><h1>Registro de alertas</h1><p>Consulta y exporta alertas confirmadas para auditoría.</p></div><button type="button" className="secondary" onClick={refresh} disabled={busy}>Actualizar</button></div>
+    <div className="pageHeading"><div><span className="eyebrow">OPERACIÓN / 08</span><h1>Registro de alertas</h1><p>Consulta y exporta alertas confirmadas para auditoría.</p></div><button type="button" className="secondary" onClick={() => refresh(true)} disabled={busy}>Actualizar</button></div>
     <section className="panel alertSearch"><h2>Filtros</h2>
       {roomsError && <p className="notice error" role="alert">No se pudieron cargar las ubicaciones: {roomsError}</p>}
       <HistoryRoomPicker key={pickerKey} rooms={rooms} value={filters.salaId} disabled={roomsLoading || !!roomsError} context="alertas"
@@ -145,7 +155,9 @@ export default function AlertsPage() {
     <p className="helper">Fechas en la zona horaria de tu navegador ({Intl.DateTimeFormat().resolvedOptions().timeZone}). La medición y el nivel corresponden a la ventana de confirmación. Una alerta abierta no garantiza datos recientes.</p>
     <div className="alertActions"><button type="button" className="secondary" disabled={!!downloading} onClick={() => download('csv')}>{downloading === 'csv' ? 'Exportando…' : 'Exportar CSV'}</button><button type="button" className="secondary" disabled={!!downloading} onClick={() => download('json')}>{downloading === 'json' ? 'Exportando…' : 'Exportar JSON'}</button></div>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {busy ? <p role="status">Cargando alertas…</p> : result && <section className="panel alertResults"><div className="panelHead"><h2>Alertas</h2><span>Página {page} · {result.alertas.length} resultados{result.hayMas ? ' · hay más resultados' : ''}</span></div>
+    <section className="panel alertResults"><div className="panelHead"><h2>Alertas</h2>{result && <span>Página {page} · {result.alertas.length} resultados{result.hayMas ? ' · hay más resultados' : ''}</span>}</div>
+      {busy && <p role="status">{result ? 'Actualizando alertas…' : 'Cargando alertas…'}</p>}
+      {result && <>
       {!result.alertas.length ? <p>No hay alertas para los filtros aplicados.</p> : <div className="alertList">{result.alertas.map(a => {
         const recent = hasRecentRoomData({ nodoId: a.nodoActualId, ultimaTelemetria: a.ultimaTelemetria, ventanaTimestamp: a.ventanaTimestamp }, now);
         return <article className="alertItem" key={a.id}><div className="alertItemHead"><div><Link to={'/salas/' + encodeURIComponent(a.salaId)}><b>{a.salaNombre}</b></Link><small>{[a.sectorNombre, a.edificioNombre, a.pisoNombre].filter(Boolean).join(' › ')}</small></div><span className={'badge ' + (a.estado === 'activa' ? 'bad' : 'good')}>{a.estado === 'activa' ? 'Activa' : 'Resuelta'}</span></div>
@@ -155,6 +167,7 @@ export default function AlertsPage() {
       })}</div>}
       <div className="alertActions"><button type="button" className="secondary" disabled={page === 1} onClick={() => changePage(page - 1)}>Anterior</button><span>Página {page}</span><button type="button" className="secondary" disabled={!result.hayMas} onClick={() => changePage(page + 1)}>Siguiente</button></div>
       {filters.orden === 'duracion' && <p className="helper">La duración se calcula desde la confirmación hasta la resolución o, si sigue activa, hasta {formatDate(filters.corte, dateOptions)}. Cambia un filtro para actualizar ese momento.</p>}
-    </section>}
+      </>}
+    </section>
   </div>;
 }

@@ -2563,14 +2563,15 @@ def alert_nodes(q: str = Query(min_length=2, max_length=100), user=Depends(allow
 
 
 @app.get("/alertas/pagina")
-def alerts_page(pagina: int = Query(1, ge=1, le=100000), filters=Depends(alert_filters),
+def alerts_page(pagina: int = Query(1, ge=1, le=100000), tamano: int = Query(50, ge=1, le=50), filters=Depends(alert_filters),
                 user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
     """Nombre: alerts_page. Razón: obtener una página con estado reciente de cada sala.
-    Entradas: filtros, página y usuario. Salida: alertas y disponibilidad de página siguiente.
+    Entradas: filtros, página, tamaño y usuario. Salida: alertas y disponibilidad de página siguiente.
     Efectos: solo lectura de PostgreSQL."""
     sql, params = alerts_query(filters, user)
-    params["offset"] = (pagina - 1) * 50
-    sql = '''WITH elegidas AS MATERIALIZED (''' + sql + ''' LIMIT 51 OFFSET %(offset)s)
+    params["offset"] = (pagina - 1) * tamano
+    params["limite"] = tamano + 1
+    sql = '''WITH elegidas AS MATERIALIZED (''' + sql + ''' LIMIT %(limite)s OFFSET %(offset)s)
         SELECT e.*,actual."nodoId" AS "nodoActualId",actual."ultimaTelemetria",actual."ventanaTimestamp"
         FROM elegidas e LEFT JOIN LATERAL (
             SELECT v."nodoId",v."ultimaTelemetria",v."ventanaTimestamp" FROM vw_estado_actual_salas v
@@ -2585,7 +2586,7 @@ def alerts_page(pagina: int = Query(1, ge=1, le=100000), filters=Depends(alert_f
         set_history_statement_timeout(conn)
         cur.execute(sql, params)
         rows = cur.fetchall()
-    return {"alertas": rows[:50], "hayMas": len(rows) > 50, "pagina": pagina}
+    return {"alertas": rows[:tamano], "hayMas": len(rows) > tamano, "pagina": pagina}
 
 
 def stream_alert_export(sql: str, params: dict, formato: str):

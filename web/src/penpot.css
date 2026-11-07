@@ -114,18 +114,18 @@
 .historyPage .historyToolbar { display:grid; grid-template-columns:minmax(250px,2fr) minmax(180px,1fr) auto; gap:14px; align-items:start; }
 .historyPage .historyToolbar > button { margin-top:23px; }
 .historyPage .historyDates { margin-top:14px; }
-.historyPage .historyRoomPicker { position:relative; min-width:0; }
-.historyPage .historyRoomPicker > label { margin-bottom:6px; }
-.historyPage .historyRoomInput { display:flex; border:1px solid #b5c8d5; border-radius:8px; background:#fff; }
-.historyPage .historyRoomInput input { border:0; background:transparent; }
-.historyPage .historyRoomInput button { flex:none; border:0; background:transparent; padding:0 12px; color:#506b7b; }
-.historyPage .historyRoomPicker small { display:block; font-size:11px; color:#5f7889; line-height:1.5; margin-top:4px; }
-.historyPage .historyRoomOptions { position:absolute; z-index:10; top:66px; left:0; right:0; border:1px solid #b5c8d5; border-radius:9px; background:#fff; box-shadow:0 8px 24px #1c3e5620; }
-.historyPage .historyRoomOptions ul { list-style:none; margin:0; padding:5px; max-height:270px; overflow:auto; }
-.historyPage .historyRoomOptions li { padding:9px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
-.historyPage .historyRoomOptions li:hover,.historyPage .historyRoomOptions li.active { background:#eaf5fa; }
-.historyPage .historyRoomOptions li[aria-selected="true"] { color:#006da4; }
-.historyPage .historyRoomOptions p { margin:10px; font-size:12px; }
+:is(.historyPage,.alertsPage) .historyRoomPicker { position:relative; min-width:0; }
+:is(.historyPage,.alertsPage) .historyRoomPicker > label { margin-bottom:6px; }
+:is(.historyPage,.alertsPage) .historyRoomInput { display:flex; border:1px solid #b5c8d5; border-radius:8px; background:#fff; }
+:is(.historyPage,.alertsPage) .historyRoomInput input { border:0; background:transparent; }
+:is(.historyPage,.alertsPage) .historyRoomInput button { flex:none; border:0; background:transparent; padding:0 12px; color:#506b7b; }
+:is(.historyPage,.alertsPage) .historyRoomPicker small { display:block; font-size:11px; color:#5f7889; line-height:1.5; margin-top:4px; }
+:is(.historyPage,.alertsPage) .historyRoomOptions { position:absolute; z-index:10; top:66px; left:0; right:0; border:1px solid #b5c8d5; border-radius:9px; background:#fff; box-shadow:0 8px 24px #1c3e5620; }
+:is(.historyPage,.alertsPage) .historyRoomOptions ul { list-style:none; margin:0; padding:5px; max-height:270px; overflow:auto; }
+:is(.historyPage,.alertsPage) .historyRoomOptions li { padding:9px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+:is(.historyPage,.alertsPage) .historyRoomOptions li:hover,:is(.historyPage,.alertsPage) .historyRoomOptions li.active { background:#eaf5fa; }
+:is(.historyPage,.alertsPage) .historyRoomOptions li[aria-selected="true"] { color:#006da4; }
+:is(.historyPage,.alertsPage) .historyRoomOptions p { margin:10px; font-size:12px; }
 @media(max-width:760px) { .historyPage .historyToolbar { grid-template-columns:1fr; } .historyPage .historyToolbar > button { margin-top:0; } }
 .historyPage .historyDates { display:grid; grid-template-columns:1fr 1fr auto; align-items:end; gap:14px; }
 .historyPage label { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#506b7b; font-weight:700; min-width:0; }
@@ -142,21 +142,21 @@
 .historyPage .historyToolbar { grid-template-columns:minmax(180px,1fr) auto; align-items:end; }
 .historyPage .historyToolbar > .historyRoomPicker { grid-column:1 / -1; }
 .historyPage .historyToolbar > button { margin-top:0; }
-.historyPage .historyLocation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
-.historyPage .historyLocationFilter { position:relative; min-width:0; }
-.historyPage .historyLocationFilter > label { margin-bottom:6px; }
-.historyPage .historyLocationButton { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; text-align:left; }
-.historyPage .historyLocationButton span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.historyPage .historyLocationOptions { position:absolute; top:100%; left:0; right:0; z-index:20; padding:8px; background:#fff; border:1px solid #b5c8d5; border-radius:8px; box-shadow:0 8px 24px #1c3e5620; }
-.historyPage .historyLocationList { max-height:220px; overflow:auto; }
-.historyPage .historyLocationList button { display:block; width:100%; padding:8px; border:0; border-radius:6px; background:transparent; text-align:left; }
-.historyPage .historyLocationList button:hover,.historyPage .historyLocationList button:focus-visible { background:#eaf5fa; }
-.historyPage .historyLocationList button[aria-current="true"] { color:#006da4; font-weight:700; }
-.historyPage .historyLocationList p { margin:8px; font-size:12px; }
-.historyPage .historyRoomOptions { top:100%; }
-.historyPage .historyRoomOptions p button { padding:2px 6px; margin-left:4px; }
+:is(.historyPage,.alertsPage) .historyLocation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+:is(.historyPage,.alertsPage) .historyLocationFilter { position:relative; min-width:0; }
+:is(.historyPage,.alertsPage) .historyLocationFilter > label { margin-bottom:6px; }
+:is(.historyPage,.alertsPage) .historyLocationButton { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; text-align:left; }
+:is(.historyPage,.alertsPage) .historyLocationButton span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+:is(.historyPage,.alertsPage) .historyLocationOptions { position:absolute; top:100%; left:0; right:0; z-index:20; padding:8px; background:#fff; border:1px solid #b5c8d5; border-radius:8px; box-shadow:0 8px 24px #1c3e5620; }
+:is(.historyPage,.alertsPage) .historyLocationList { max-height:220px; overflow:auto; }
+:is(.historyPage,.alertsPage) .historyLocationList button { display:block; width:100%; padding:8px; border:0; border-radius:6px; background:transparent; text-align:left; }
+:is(.historyPage,.alertsPage) .historyLocationList button:hover,:is(.historyPage,.alertsPage) .historyLocationList button:focus-visible { background:#eaf5fa; }
+:is(.historyPage,.alertsPage) .historyLocationList button[aria-current="true"] { color:#006da4; font-weight:700; }
+:is(.historyPage,.alertsPage) .historyLocationList p { margin:8px; font-size:12px; }
+:is(.historyPage,.alertsPage) .historyRoomOptions { top:100%; }
+:is(.historyPage,.alertsPage) .historyRoomOptions p button { padding:2px 6px; margin-left:4px; }
 @media(max-width:760px) { .historyPage .historyToolbar { grid-template-columns:1fr; } }
-@media(max-width:520px) { .historyPage .historyLocation { grid-template-columns:1fr; } }
+@media(max-width:520px) { :is(.historyPage,.alertsPage) .historyLocation { grid-template-columns:1fr; } }
 .chartTabs { flex-wrap:wrap; }
 @media(max-width:760px) { .historyPage .historyFilters,.historyPage .historyDates { grid-template-columns:1fr; } }
 .telegramPage .telegramGrid { display:grid; grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; margin-top:18px; }
@@ -397,6 +397,11 @@
 .profilePasswordField .profileEye:hover { color: var(--deep); background: #edf5f8; }
 .profilePasswordMismatch { color: #a83131; font-size: 11px; }
 .alertSearch { margin-bottom: 18px; }
+.alertsPage .historyRoomPicker label { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#506b7b; font-weight:700; }
+.alertsPage .historyRoomPicker input { width:100%; min-width:0; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; }
+.alertsPage .historyRoomInput input { border:0; background:transparent; }
+.alertsPage .historyRoomOptions small { display:block; color:#5f7889; }
+.alertsPage .alertResults { min-height:min(760px, 100vh); margin-top:18px; }
 .alertSearchGrid { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)); gap: 12px; align-items: start; }
 .alertSearchGrid label, .alertRoomSearch { display: flex; flex-direction: column; gap: 6px; color: #3d576b; font-size: 12px; font-weight: 600; }
 .alertMoreFilters { margin-top: 18px; grid-template-columns: minmax(210px, 2fr) repeat(5, minmax(110px, 1fr)); }
@@ -429,7 +434,7 @@
   .profileActions button { width: 100%; }
 }
 .historyPage .historyPickerRow { display:grid; grid-template-columns:minmax(0,2fr) minmax(180px,1fr) auto; gap:14px; align-items:start; }
-.historyPage .historyRoomField { position:relative; min-width:0; }
+:is(.historyPage,.alertsPage) .historyRoomField { position:relative; min-width:0; }
 .historyPage .historyPickerRow > button { margin-top:25px; }
 .historyDateDialog { width:min(900px,100%); }
 .historyDateDialog::backdrop { background:rgba(15,43,58,.48); }
