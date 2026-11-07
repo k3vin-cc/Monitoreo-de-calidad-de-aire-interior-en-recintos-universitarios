@@ -190,29 +190,142 @@ export default function HistoryPage({
       setDownloading('');
     }
   }
-  return <div className="historyPage"><div className="pageHeading"><div><span className="eyebrow">ANÁLISIS</span><h1>Histórico</h1><p>Consulta mediciones verificadas y recuperadas con hora estimada.</p></div></div><section className="panel"><form onSubmit={queryHistory}><div className="historyToolbar"><HistoryRoomPicker rooms={rooms} value={room} onChange={chooseRoom} disabled={loading}><label>Período<select value={period} onChange={e => {
-                const next = e.target.value;
-                if (next === 'custom') setDateDialog(true);else {
-                  setPeriod(next);
-                  preset(Number(next));
-                }
-              }}><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="custom">Personalizado…</option></select></label><button className="primary" disabled={!currentRoom || busy || pageBusy}>{busy ? 'Consultando…' : 'Consultar'}</button></HistoryRoomPicker></div>{period === 'custom' && <p className="helper">{from.replace('T', ' ')} — {to.replace('T', ' ')} <button type="button" className="secondary compact" onClick={() => setDateDialog(true)}>Editar período</button></p>}{dateDialog && <HistoryDateDialog from={from} to={to} onCancel={() => setDateDialog(false)} onApply={(start, end) => {
-          setFrom(start);
-          setTo(end);
-          setPeriod('custom');
-          setDateDialog(false);
-        }} />}<p className="helper">Fechas en {Intl.DateTimeFormat().resolvedOptions().timeZone}. Las horas estimadas se identifican; las ventanas sin fecha quedan fuera del gráfico.</p></form>{changed && <p role="status">Filtros modificados. Pulsa Consultar para actualizar los resultados.</p>}{error && <div className="notice error" role="alert">{error}</div>}</section>{busy && !applied && <>
-        <section className="panel historyLoadingApplied" role="status" aria-live="polite">
-          <b>Consultando histórico…</b><p>Preparando las mediciones del período.</p>
+  return (
+    <div className="historyPage">
+      <div className="pageHeading">
+        <div>
+          <span className="eyebrow">ANÁLISIS</span>
+          <h1>Histórico</h1>
+          <p>Consulta mediciones verificadas y recuperadas con hora estimada.</p>
+        </div>
+      </div>
+
+      <section className="panel">
+        <form onSubmit={queryHistory}>
+          <div className="historyToolbar">
+            <HistoryRoomPicker rooms={rooms} value={room} onChange={chooseRoom} disabled={loading}>
+              <label>
+                Período
+                <select value={period} onChange={e => {
+                  const next = e.target.value;
+                  if (next === 'custom') setDateDialog(true);
+                  else {
+                    setPeriod(next);
+                    preset(Number(next));
+                  }
+                }}>
+                  <option value="1">Últimas 24 horas</option>
+                  <option value="7">Últimos 7 días</option>
+                  <option value="30">Últimos 30 días</option>
+                  <option value="custom">Personalizado…</option>
+                </select>
+              </label>
+              <button className="primary" disabled={!currentRoom || busy || pageBusy}>
+                {busy ? 'Consultando…' : 'Consultar'}
+              </button>
+            </HistoryRoomPicker>
+          </div>
+
+          {period === 'custom' && (
+            <p className="helper">
+              {from.replace('T', ' ')} — {to.replace('T', ' ')}{' '}
+              <button type="button" className="secondary compact" onClick={() => setDateDialog(true)}>
+                Editar período
+              </button>
+            </p>
+          )}
+          {dateDialog && (
+            <HistoryDateDialog from={from} to={to} onCancel={() => setDateDialog(false)}
+              onApply={(start, end) => {
+                setFrom(start);
+                setTo(end);
+                setPeriod('custom');
+                setDateDialog(false);
+              }} />
+          )}
+          <p className="helper">
+            Fechas en {Intl.DateTimeFormat().resolvedOptions().timeZone}. Las horas estimadas se identifican; las ventanas sin fecha quedan fuera del gráfico.
+          </p>
+        </form>
+        {changed && <p role="status">Filtros modificados. Pulsa Consultar para actualizar los resultados.</p>}
+        {error && <div className="notice error" role="alert">{error}</div>}
+      </section>
+
+      {busy && !applied && (
+        <>
+          <section className="panel historyLoadingApplied" role="status" aria-live="polite">
+            <b>Consultando histórico…</b><p>Preparando las mediciones del período.</p>
+          </section>
+          <section className="panel chartPanel historyLoadingChart" aria-hidden="true"><h2>Evolución de las mediciones</h2></section>
+          <section className="panel historyLoadingSummary" aria-hidden="true"><h2>Resumen del período completo</h2></section>
+          <section className="panel historyLoadingTable" aria-hidden="true"><h2>Ventanas consultadas</h2></section>
+        </>
+      )}
+
+      {applied && (
+        <section className="panel historyApplied">
+          <b>{applied.name}</b>
+          <p>
+            {formatDate(applied.desde, { dateStyle: 'medium', timeStyle: 'short' })} — {formatDate(applied.hasta, { dateStyle: 'medium', timeStyle: 'short' })}
+          </p>
+          <div className="inlineActions">
+            <button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('csv')}>Exportar CSV</button>
+            <button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('json')}>Exportar JSON</button>
+            {downloading && <span role="status">Preparando descarga…</span>}
+          </div>
+          <small>Exporta todas las ventanas fechadas del rango aplicado.</small>
+          {undatedStatus === 'loading' && <p role="status">Comprobando ventanas sin fecha…</p>}
+          {undatedStatus === 'error' && (
+            <p className="notice error" role="alert">No se pudo comprobar cuántas ventanas carecen de fecha. Las mediciones mostradas sí se cargaron.</p>
+          )}
+          {undatedStatus === 'ready' && undated > 0 && (
+            <p role="status">{undated} ventanas de esta sala conservan sus datos, pero no tienen fecha recuperable.</p>
+          )}
         </section>
-        <section className="panel chartPanel historyLoadingChart" aria-hidden="true"><h2>Evolución de las mediciones</h2></section>
-        <section className="panel historyLoadingSummary" aria-hidden="true"><h2>Resumen del período completo</h2></section>
-        <section className="panel historyLoadingTable" aria-hidden="true"><h2>Ventanas consultadas</h2></section>
-      </>}{applied && <section className="panel historyApplied"><b>{applied.name}</b><p>{formatDate(applied.desde, {
-          dateStyle: 'medium',
-          timeStyle: 'short'
-        })} — {formatDate(applied.hasta, {
-          dateStyle: 'medium',
-          timeStyle: 'short'
-        })}</p><div className="inlineActions"><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('csv')}>Exportar CSV</button><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('json')}>Exportar JSON</button>{downloading && <span role="status">Preparando descarga…</span>}</div><small>Exporta todas las ventanas fechadas del rango aplicado.</small>{undatedStatus === 'loading' && <p role="status">Comprobando ventanas sin fecha…</p>}{undatedStatus === 'error' && <p className="notice error" role="alert">No se pudo comprobar cuántas ventanas carecen de fecha. Las mediciones mostradas sí se cargaron.</p>}{undatedStatus === 'ready' && undated > 0 && <p role="status">{undated} ventanas de esta sala conservan sus datos, pero no tienen fecha recuperable.</p>}</section>}{applied && total > 0 ? <><section className="panel chartPanel"><h2>Evolución de las mediciones</h2><p>{total} ventanas · {rows.length} puntos representativos · se conservan extremos y huecos · naranja: hora estimada.</p><Chart rows={rows} /></section><section className="panel"><h2>Resumen del período completo</h2><div className="tableScroll"><table><thead><tr><th>Variable</th><th>Valores válidos</th><th>Promedio</th><th>Mínimo</th><th>Máximo</th></tr></thead><tbody>{stats.map((stat, i) => <tr key={stat.key}><td>{['CO₂ (ppm)', 'PM₂.₅ (µg/m³)', 'PM₁₀ (µg/m³)', 'Temperatura (°C)', 'Humedad (%)'][i]}</td><td>{stat.count} / {total}</td><td>{number(stat.avg)}</td><td>{number(stat.min)}</td><td>{number(stat.max)}</td></tr>)}</tbody></table></div></section><section className="panel"><h2>Ventanas consultadas</h2><nav className="historyPages" aria-label="Páginas de mediciones"><span>{total} ventanas · página {current} de {pages}{pageBusy ? ' · Cargando…' : ''}</span><button className="secondary compact" disabled={current === 1 || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current - 1)}>Anterior</button><button className="secondary compact" disabled={current === pages || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current + 1)}>Siguiente</button></nav><Table rows={tableRows} /></section></> : !busy && <div className="empty"><b>{applied ? 'No hay mediciones para la consulta aplicada' : 'Elige una sala y un período'}</b><span>{applied ? 'Prueba otro período o sala y vuelve a consultar.' : 'Pulsa Consultar para cargar el histórico.'}</span></div>}</div>;
+      )}
+
+      {applied && total > 0 ? (
+        <>
+          <section className="panel chartPanel">
+            <h2>Evolución de las mediciones</h2>
+            <p>{total} ventanas · {rows.length} puntos representativos · se conservan extremos y huecos · naranja: hora estimada.</p>
+            <Chart rows={rows} />
+          </section>
+          <section className="panel">
+            <h2>Resumen del período completo</h2>
+            <div className="tableScroll">
+              <table>
+                <thead><tr><th>Variable</th><th>Valores válidos</th><th>Promedio</th><th>Mínimo</th><th>Máximo</th></tr></thead>
+                <tbody>
+                  {stats.map((stat, i) => (
+                    <tr key={stat.key}>
+                      <td>{['CO₂ (ppm)', 'PM₂.₅ (µg/m³)', 'PM₁₀ (µg/m³)', 'Temperatura (°C)', 'Humedad (%)'][i]}</td>
+                      <td>{stat.count} / {total}</td>
+                      <td>{number(stat.avg)}</td>
+                      <td>{number(stat.min)}</td>
+                      <td>{number(stat.max)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section className="panel">
+            <h2>Ventanas consultadas</h2>
+            <nav className="historyPages" aria-label="Páginas de mediciones">
+              <span>{total} ventanas · página {current} de {pages}{pageBusy ? ' · Cargando…' : ''}</span>
+              <button className="secondary compact" disabled={current === 1 || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current - 1)}>Anterior</button>
+              <button className="secondary compact" disabled={current === pages || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current + 1)}>Siguiente</button>
+            </nav>
+            <Table rows={tableRows} />
+          </section>
+        </>
+      ) : !busy && (
+        <div className="empty">
+          <b>{applied ? 'No hay mediciones para la consulta aplicada' : 'Elige una sala y un período'}</b>
+          <span>{applied ? 'Prueba otro período o sala y vuelve a consultar.' : 'Pulsa Consultar para cargar el histórico.'}</span>
+        </div>
+      )}
+    </div>
+  );
 }
