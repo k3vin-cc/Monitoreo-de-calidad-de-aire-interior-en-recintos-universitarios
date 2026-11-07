@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from './services';
 import HistoryRoomPicker from './HistoryRoomPicker';
 import HistoryDateDialog from './HistoryDateDialog';
@@ -17,8 +17,9 @@ export default function HistoryPage({
   Chart,
   Table
 }) {
-  const [params, setParams] = useSearchParams();
-  const [room, setRoom] = useState(() => params.get('sala') || '');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [room, setRoom] = useState(() => location.state?.historicoSala || '');
   const [rooms, setRooms] = useState([]),
     [loading, setLoading] = useState(true),
     [period, setPeriod] = useState('1'),
@@ -36,13 +37,16 @@ export default function HistoryPage({
   const version = useRef(0),
     downloadLock = useRef(false);
   useEffect(() => {
-    const linkedRoom = params.get('sala');
-    if (!linkedRoom) return;
-    setRoom(linkedRoom);
-    const next = new URLSearchParams(params);
+    const linkedRoom = location.state?.historicoSala;
+    const next = new URLSearchParams(location.search);
+    const oldRoom = next.has('sala');
+    if (!linkedRoom && !oldRoom) return;
+    if (linkedRoom) setRoom(linkedRoom);
     next.delete('sala');
-    setParams(next, { replace: true });
-  }, [params, setParams]);
+    const search = next.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash },
+      { replace: true, state: null });
+  }, [location, navigate]);
   useEffect(() => {
     version.current++;
     setBusy(false);
