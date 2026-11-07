@@ -9,6 +9,19 @@ export function roomPath(room){return [room.sectorNombre,room.edificioNombre,roo
  * Entradas: texto de sala o búsqueda. Salida: texto comparable. Efectos: ninguno. */
 function normalized(value){return String(value||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
 
+/** Nombre: LocationFilter. Razón: acotar una lista de ubicaciones al escribir.
+ * Entradas: etiqueta, opciones, valor y callback. Salida: selector con búsqueda. Efectos: cambia el filtro elegido. */
+function LocationFilter({label,options,value,disabled,onChange}){
+ const [open,setOpen]=useState(false),[query,setQuery]=useState('');
+ const root=useRef(null),search=useRef(null),id=useId();
+ useEffect(()=>{const close=e=>{if(!root.current?.contains(e.target))setOpen(false)};document.addEventListener('pointerdown',close);return()=>document.removeEventListener('pointerdown',close)},[]);
+ useEffect(()=>{if(open)search.current?.focus()},[open]);
+ useEffect(()=>{if(disabled)setOpen(false)},[disabled]);
+ const matches=options.filter(([,name])=>normalized(name).includes(normalized(query)));
+ function choose(next){onChange(next);setOpen(false);setQuery('');root.current?.querySelector('button')?.focus()}
+ return <div className="historyLocationFilter" ref={root} onKeyDown={e=>{if(e.key==='Escape'&&open){e.preventDefault();setOpen(false);root.current?.querySelector('button')?.focus()}}}><label id={id}>{label}</label><button type="button" className="historyLocationButton" disabled={disabled} aria-labelledby={id} aria-expanded={open} onClick={()=>{setQuery('');setOpen(!open)}}><span>{options.find(([key])=>key===value)?.[1]||'Todos'}</span><span aria-hidden="true">⌄</span></button>{open&&<div className="historyLocationOptions"><input ref={search} type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Buscar ${label.toLocaleLowerCase('es')}…`} aria-label={`Buscar ${label.toLocaleLowerCase('es')}`}/><div className="historyLocationList"><button type="button" onClick={()=>choose('')}>Todos</button>{matches.slice(0,50).map(([key,name])=><button type="button" key={key} aria-current={value===key?'true':undefined} onClick={()=>choose(key)}>{name}</button>)}{!matches.length&&<p>No hay coincidencias.</p>}</div>{matches.length>50&&<small>Mostrando 50 de {matches.length}. Escribe para acotar.</small>}</div>}</div>;
+}
+
 /** Nombre: HistoryRoomPicker. Razón: localizar una sala por ubicación o por nombre de nodo.
  * Entradas: salas autorizadas, sala elegida y cambio. Salida: filtros encadenados y búsqueda acotada.
  * Efectos: consulta de búsqueda de solo lectura y cambio local de sala. */
@@ -49,9 +62,9 @@ export default function HistoryRoomPicker({rooms,value,onChange,disabled,childre
  }
  return <div className="historyRoomPicker" ref={root} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false)}}>
    <div className="historyLocation">
-     <label>Sector<select value={sector} disabled={disabled} onChange={event=>changeScope('sector',event.target.value)}><option value="">Todos</option>{sectors.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
-     <label>Edificio<select value={building} disabled={disabled||!sector} onChange={event=>changeScope('building',event.target.value)}><option value="">Todos</option>{buildings.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
-     <label>Piso<select value={floor} disabled={disabled||!building} onChange={event=>changeScope('floor',event.target.value)}><option value="">Todos</option>{floors.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
+     <LocationFilter label="Sector" options={sectors} value={sector} disabled={disabled} onChange={next=>changeScope('sector',next)}/>
+     <LocationFilter label="Edificio" options={buildings} value={building} disabled={disabled||!sector} onChange={next=>changeScope('building',next)}/>
+     <LocationFilter label="Piso" options={floors} value={floor} disabled={disabled||!building} onChange={next=>changeScope('floor',next)}/>
    </div>
    <div className="historyPickerRow"><div className="historyRoomField"><label htmlFor={id}>Sala o nodo</label>
    <div className="historyRoomInput"><input id={id} ref={input} role="combobox" aria-expanded={open} aria-controls={id+'-list'} aria-autocomplete="list" aria-activedescendant={open&&active>=0?id+'-'+active:undefined} disabled={disabled} value={open?query:selected?.nombre||''} onFocus={()=>{setOpen(true);setQuery('');setActive(-1)}} onChange={event=>{setQuery(event.target.value);setOpen(true);setActive(-1)}} onKeyDown={keyboard} placeholder={disabled?'Cargando salas…':'Buscar sala, nodo o ubicación…'}/><button type="button" disabled={disabled} aria-label={open?'Cerrar opciones de sala':'Abrir opciones de sala'} onClick={()=>{if(open)setOpen(false);else{setQuery('');setActive(-1);setOpen(true);input.current?.focus()}}} tabIndex={-1}>⌄</button></div>

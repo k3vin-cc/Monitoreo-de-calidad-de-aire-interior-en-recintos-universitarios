@@ -136,6 +136,16 @@
 .historyPage .historyToolbar > .historyRoomPicker { grid-column:1 / -1; }
 .historyPage .historyToolbar > button { margin-top:0; }
 .historyPage .historyLocation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+.historyPage .historyLocationFilter { position:relative; min-width:0; }
+.historyPage .historyLocationFilter > label { margin-bottom:6px; }
+.historyPage .historyLocationButton { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; height:40px; padding:8px 10px; border:1px solid #b5c8d5; border-radius:8px; background:#fff; color:#24465b; text-align:left; }
+.historyPage .historyLocationButton span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.historyPage .historyLocationOptions { position:absolute; top:100%; left:0; right:0; z-index:20; padding:8px; background:#fff; border:1px solid #b5c8d5; border-radius:8px; box-shadow:0 8px 24px #1c3e5620; }
+.historyPage .historyLocationList { max-height:220px; overflow:auto; }
+.historyPage .historyLocationList button { display:block; width:100%; padding:8px; border:0; border-radius:6px; background:transparent; text-align:left; }
+.historyPage .historyLocationList button:hover,.historyPage .historyLocationList button:focus-visible { background:#eaf5fa; }
+.historyPage .historyLocationList button[aria-current="true"] { color:#006da4; font-weight:700; }
+.historyPage .historyLocationList p { margin:8px; font-size:12px; }
 .historyPage .historyRoomOptions { top:100%; }
 .historyPage .historyRoomOptions p button { padding:2px 6px; margin-left:4px; }
 @media(max-width:760px) { .historyPage .historyToolbar { grid-template-columns:1fr; } }
