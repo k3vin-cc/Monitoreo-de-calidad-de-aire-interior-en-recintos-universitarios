@@ -48,18 +48,42 @@ function LocationFilter({
     setQuery('');
     root.current?.querySelector('button')?.focus();
   }
-  return <div className="historyLocationFilter" ref={root} onKeyDown={e => {
-    if (e.key === 'Escape' && open) {
-      e.preventDefault();
-      setOpen(false);
-      root.current?.querySelector('button')?.focus();
-    }
-  }}><label id={id}>{label}</label><button type="button" className="historyLocationButton" disabled={disabled} aria-labelledby={id} aria-expanded={open} onClick={() => {
-      setQuery('');
-      setOpen(!open);
-    }}><span>{options.find(([key]) => key === value)?.[1] || 'Todos'}</span><span aria-hidden="true">⌄</span></button>{open && <div className="historyLocationOptions"><input ref={search} type="search" value={query} onKeyDown={e => {
-        if (e.key === 'Enter') e.preventDefault();
-      }} onChange={e => setQuery(e.target.value)} placeholder={`Buscar ${label.toLocaleLowerCase('es')}…`} aria-label={`Buscar ${label.toLocaleLowerCase('es')}`} /><div className="historyLocationList"><button type="button" onClick={() => choose('')}>Todos</button>{matches.slice(0, 50).map(([key, name]) => <button type="button" key={key} aria-current={value === key ? 'true' : undefined} onClick={() => choose(key)}>{name}</button>)}{!matches.length && <p>No hay coincidencias.</p>}</div>{matches.length > 50 && <small>Mostrando 50 de {matches.length}. Escribe para acotar.</small>}</div>}</div>;
+  const selectedName = options.find(([key]) => key === value)?.[1] || 'Todos';
+  return (
+    <div className="historyLocationFilter" ref={root} onBlur={e => {
+      if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+    }} onKeyDown={e => {
+      if (e.key === 'Escape' && open) {
+        e.preventDefault();
+        setOpen(false);
+        root.current?.querySelector('button')?.focus();
+      }
+    }}>
+      <label id={id}>{label}</label>
+      <button type="button" className="historyLocationButton" disabled={disabled}
+        aria-label={`${label}: ${selectedName}`} aria-expanded={open} onClick={() => {
+          setQuery('');
+          setOpen(!open);
+        }}>
+        <span>{selectedName}</span><span aria-hidden="true">⌄</span>
+      </button>
+      {open && <div className="historyLocationOptions">
+        <input ref={search} type="search" value={query} onKeyDown={e => {
+          if (e.key === 'Enter') e.preventDefault();
+        }} onChange={e => setQuery(e.target.value)}
+          placeholder={`Buscar ${label.toLocaleLowerCase('es')}…`}
+          aria-label={`Buscar ${label.toLocaleLowerCase('es')}`} />
+        <div className="historyLocationList">
+          <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => choose('')}>Todos</button>
+          {matches.slice(0, 50).map(([key, name]) => <button type="button" key={key}
+            aria-current={value === key ? 'true' : undefined}
+            onMouseDown={e => e.preventDefault()} onClick={() => choose(key)}>{name}</button>)}
+          {!matches.length && <p>No hay coincidencias.</p>}
+        </div>
+        {matches.length > 50 && <small>Mostrando 50 de {matches.length}. Escribe para acotar.</small>}
+      </div>}
+    </div>
+  );
 }
 
 /** Nombre: HistoryRoomPicker. Razón: localizar una sala por ubicación o por nombre de nodo.

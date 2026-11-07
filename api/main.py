@@ -1949,7 +1949,7 @@ def find_history_rooms(pattern: str, sectorId: str | None, edificioId: str | Non
     Efectos  : Solo lectura de PostgreSQL.
     """
     return fetch_all('''WITH nodos_coincidentes AS MATERIALIZED (
-            SELECT id,"salaId" FROM nodos WHERE translate(lower(nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
+            SELECT id,"salaId" FROM nodos WHERE translate(lower(nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun')
         )
         SELECT s.id,s.nombre,s."pisoId",p.nombre AS "pisoNombre",
                p."edificioId",ed.nombre AS "edificioNombre",
@@ -1962,8 +1962,8 @@ def find_history_rooms(pattern: str, sectorId: str | None, edificioId: str | Non
           AND (%s::text IS NULL OR ed."sectorId"=%s::text)
           AND (%s::text IS NULL OR ed.id=%s::text)
           AND (%s::text IS NULL OR p.id=%s::text)'''+scope+'''
-          AND (translate(lower(s.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu') OR translate(lower(p.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
-               OR translate(lower(ed.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu') OR translate(lower(sec.nombre), 'áéíóúü', 'aeiouu') LIKE translate(lower(%s), 'áéíóúü', 'aeiouu')
+          AND (translate(lower(s.nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun') OR translate(lower(p.nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun')
+               OR translate(lower(ed.nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun') OR translate(lower(sec.nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun')
                OR EXISTS (
                    SELECT 1 FROM nodos_coincidentes n
                    WHERE n."salaId"=s.id
