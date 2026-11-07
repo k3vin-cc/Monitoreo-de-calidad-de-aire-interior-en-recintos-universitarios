@@ -132,6 +132,13 @@
 .historyPage .historyApplied p { margin:8px 0; }
 .historyPage .historyApplied small { display:block; margin-top:10px; color:#5f7889; }
 .historyPage .historyPages { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:13px; }
+.historyPage .historyToolbar { grid-template-columns:minmax(0,2fr) minmax(180px,1fr) auto; align-items:end; }
+.historyPage .historyToolbar > button { margin-top:0; }
+.historyPage .historyLocation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+.historyPage .historyRoomOptions { top:100%; }
+.historyPage .historyRoomOptions p button { padding:2px 6px; margin-left:4px; }
+@media(max-width:760px) { .historyPage .historyToolbar { grid-template-columns:1fr; } }
+@media(max-width:520px) { .historyPage .historyLocation { grid-template-columns:1fr; } }
 .chartTabs { flex-wrap:wrap; }
 @media(max-width:760px) { .historyPage .historyFilters,.historyPage .historyDates { grid-template-columns:1fr; } }
 .telegramPage .telegramGrid { display:grid; grid-template-columns:minmax(0,1fr); max-width:1050px; gap:18px; margin-top:18px; }

@@ -1920,6 +1920,52 @@ def delete_floor(pisoId: str, body: dict[str, bool] = Body(default={}), user=Dep
     return retire_location("floor", pisoId, user, bool(body.get("borrarHistorial")))
 
 
+@app.get("/historico/buscar-salas")
+def search_history_rooms(q: str = Query(min_length=2, max_length=100),
+                         sectorId: str | None = None, edificioId: str | None = None,
+                         pisoId: str | None = None,
+                         user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+    """
+    Nombre   : search_history_rooms
+    Razón    : Localiza salas por ubicación o por nodos actuales e históricos.
+    Entradas : texto de búsqueda y ubicación opcional, dentro del ámbito del usuario.
+    Salida   : hasta 30 salas autorizadas; nunca filtra sus mediciones por nodo.
+    Efectos  : Ninguno; consulta datos existentes sin modificarlos.
+    """
+    term = q.strip()
+    if len(term) < 2:
+        raise HTTPException(422, "Escribe al menos dos caracteres")
+    scope, scope_params = scoped_sql("p", user)
+    pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    return fetch_all('''WITH nodos_coincidentes AS MATERIALIZED (
+            SELECT id,"salaId" FROM nodos WHERE nombre ILIKE %s
+        )
+        SELECT s.id,s.nombre,s."pisoId",p.nombre AS "pisoNombre",
+               p."edificioId",ed.nombre AS "edificioNombre",
+               ed."sectorId",sec.nombre AS "sectorNombre"
+        FROM salas s JOIN pisos p ON p.id=s."pisoId"
+        JOIN edificios ed ON ed.id=p."edificioId"
+        JOIN sectores sec ON sec.id=ed."sectorId"
+        WHERE s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL
+          AND ed."retiradoEn" IS NULL AND sec."retiradoEn" IS NULL
+          AND (%s::text IS NULL OR ed."sectorId"=%s::text)
+          AND (%s::text IS NULL OR ed.id=%s::text)
+          AND (%s::text IS NULL OR p.id=%s::text)'''+scope+'''
+          AND (s.nombre ILIKE %s OR p.nombre ILIKE %s
+               OR ed.nombre ILIKE %s OR sec.nombre ILIKE %s
+               OR EXISTS (
+                   SELECT 1 FROM nodos_coincidentes n
+                   WHERE n."salaId"=s.id
+                      OR EXISTS (SELECT 1 FROM telemetria t
+                                 WHERE t."salaId"=s.id AND t."nodoId"=n.id)
+                      OR EXISTS (SELECT 1 FROM telemetria_tiempo_incierto ti
+                                 WHERE ti."salaId"=s.id AND ti."nodoId"=n.id)
+               ))
+        ORDER BY sec.nombre,ed.nombre,p.nivel,s.nombre LIMIT 30''',
+        (pattern, sectorId, sectorId, edificioId, edificioId, pisoId, pisoId,
+         *scope_params, pattern, pattern, pattern, pattern))
+
+
 @app.get("/salas")
 def salas(pisoId: str | None = None, edificioId: str | None = None, incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN", "ANALISTA", "VIEWER", "GUEST"))):
     suffix, params = scoped_sql("p", user)
