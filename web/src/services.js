@@ -15,10 +15,11 @@ export const session = {
   subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)}
 };
 async function request(path, options={}) {
-  const headers = new Headers(options.headers || {});
-  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
+  const {responseType,...fetchOptions}=options;
+  const headers = new Headers(fetchOptions.headers || {});
+  if (fetchOptions.body && !(fetchOptions.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
   const firmwareDownload = path.startsWith('/firmwares/') && path.endsWith('/descarga');
-  const send=()=>fetch(`${API_BASE}${path}`,{...options,headers:new Headers(headers),credentials:'include',cache:firmwareDownload?'no-store':options.cache});
+  const send=()=>fetch(`${API_BASE}${path}`,{...fetchOptions,headers:new Headers(headers),credentials:'include',cache:firmwareDownload?'no-store':fetchOptions.cache});
   let response = await send();
   const authPath=path.startsWith('/auth/');
   if(response.status===401&&!authPath&&session.authenticated){
@@ -39,7 +40,7 @@ async function request(path, options={}) {
     const err=new Error(message);err.status=response.status;throw err;
   }
   const type=response.headers.get('content-type')||'';
-  return type.includes('application/json') ? response.json() : response.blob();
+  return responseType==='blob' ? response.blob() : type.includes('application/json') ? response.json() : response.blob();
 }
 async function renewAccessToken(){
   if(!refreshInFlight)refreshInFlight=(async()=>{
@@ -70,7 +71,7 @@ export const api = {
   state: (id,options={})=>request(`/salas/${encodeURIComponent(id)}/estado${query(options)}`),
   /** Nombre: stateComplements. Razón: solicita métricas y alertas después del estado actual. Entradas: identificador de sala. Salida: complementos permitidos por el servidor. Efectos: consulta la API. */
   stateComplements: id=>request(`/salas/${encodeURIComponent(id)}/estado/complementos`), telemetry:(id,params)=>request(`/salas/${encodeURIComponent(id)}/telemetria${query(params)}`), telemetryWithoutDate:id=>request(`/salas/${encodeURIComponent(id)}/telemetria-sin-fecha`),
-  exportRoom:(id,format,params)=>request(`/salas/${encodeURIComponent(id)}/exportacion${query({formato:format,...params})}`),
+  exportRoom:(id,format,params)=>request(`/salas/${encodeURIComponent(id)}/exportacion${query({formato:format,...params})}`,{responseType:'blob'}),
   alerts:params=>request('/alertas'+query(params)), nodes: (options={})=>request('/nodos'+query({incluirConteosHistorial:false,...options})), verifyNode:id=>request(`/nodos/${encodeURIComponent(id)}/verificar-presencia`,{method:'POST'}),
   /** Nombre: nodeRetirementSummary. Razón: obtiene el historial sólo al abrir el diálogo de retiro. Entradas: id del nodo seleccionado. Salida: conteos históricos del nodo. Efectos: ninguno; consulta la API. */
   nodeRetirementSummary:id=>request(`/nodos/${encodeURIComponent(id)}/resumen-retiro`), nodeProvisioning:id=>request(`/nodos/${encodeURIComponent(id)}/aprovisionamiento`,{method:'POST'}), createNode:body=>request('/nodos',{method:'POST',body:JSON.stringify(body)}), patchNode:(id,body)=>request(`/nodos/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}), deleteNode:(id,body={})=>request(`/nodos/${encodeURIComponent(id)}`,{method:'DELETE',body:JSON.stringify(body)}), assignNode:(id,salaId)=>request(`/nodos/${encodeURIComponent(id)}/asignacion`,{method:'PATCH',body:JSON.stringify({salaId})}),
