@@ -2437,17 +2437,23 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
     """
     params = (sala_id, desde, desde, hasta, hasta, sala_id, desde, desde, hasta, hasta)
     with db() as conn, conn.cursor(name="exportacion_sala") as cur:
-        cur.itersize = 100
+        cur.itersize = 500
         set_history_statement_timeout(conn)
         cur.execute(HISTORY_UNION_SQL + ' ORDER BY fecha,nodo,orden', params)
         if formato == "json":
             yield b"["
             first = True
+            buffer = bytearray()
             for result in cur:
                 if not first:
-                    yield ",".encode("utf-8")
-                yield json.dumps(jsonable_encoder(result["data"]), ensure_ascii=False).encode("utf-8")
+                    buffer.extend(b",")
+                buffer.extend(json.dumps(result["data"], ensure_ascii=False).encode("utf-8"))
                 first = False
+                if len(buffer) >= 65536:
+                    yield bytes(buffer)
+                    buffer.clear()
+            if buffer:
+                yield bytes(buffer)
             yield b"]"
             return
         output = io.StringIO(newline="")
@@ -2470,9 +2476,12 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
                     value = csv_safe_text(value)
                 values[key] = value
             writer.writerow(values)
+            if output.tell() >= 65536:
+                yield output.getvalue().encode("utf-8")
+                output.seek(0)
+                output.truncate(0)
+        if output.tell():
             yield output.getvalue().encode("utf-8")
-            output.seek(0)
-            output.truncate(0)
 
 
 @app.get("/salas/{salaId}/exportacion")
