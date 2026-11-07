@@ -93,6 +93,8 @@ export default function HistoryRoomPicker({
   rooms,
   value,
   onChange,
+  onScopeChange,
+  context = 'historico',
   disabled,
   children
 }) {
@@ -179,7 +181,7 @@ export default function HistoryRoomPicker({
     setSector(room.sectorId);
     setBuilding(room.edificioId);
     setFloor(room.pisoId);
-    onChange(room.id);
+    onChange(room.id, room);
     setOpen(false);
     setQuery('');
     setActive(-1);
@@ -188,6 +190,9 @@ export default function HistoryRoomPicker({
   /** Nombre: changeScope. Razón: limpiar selecciones hijas al cambiar ubicación.
    * Entradas: nivel y valor elegido. Salida: ámbito local actualizado. Efectos: deselecciona la sala. */
   function changeScope(level, next) {
+    const scope = level === 'sector' ? { sectorId: next, edificioId: '', pisoId: '' } :
+      level === 'building' ? { sectorId: sector, edificioId: next, pisoId: '' } :
+      { sectorId: sector, edificioId: building, pisoId: next };
     if (level === 'sector') {
       setSector(next);
       setBuilding('');
@@ -197,6 +202,7 @@ export default function HistoryRoomPicker({
       setFloor('');
     } else setFloor(next);
     onChange('');
+    onScopeChange?.(scope);
     setQuery('');
     setRemote({
       status: 'idle',
@@ -216,7 +222,7 @@ export default function HistoryRoomPicker({
     }
     if (event.key === 'Enter' && open) {
       event.preventDefault();
-      if (active >= 0 && visible[active]) choose(visible[active]);else if (visible.length === 1) choose(visible[0]);
+      if (active >= 0 && visible[active]) choose(visible[active]);else if (visible.length) choose(visible[0]);
     }
     if (event.key === 'Escape' && open) {
       event.preventDefault();
@@ -250,7 +256,7 @@ export default function HistoryRoomPicker({
               input.current?.focus();
             }
           }} tabIndex={-1}>⌄</button></div>
-   <small>{selected ? `${roomPath(selected)} · Histórico completo de la sala` : 'Escribe dos caracteres para buscar un nodo. Solo ayuda a encontrar la sala; el histórico incluye todos sus nodos.'}</small>
+   <small>{selected ? `${roomPath(selected)}${context === 'historico' ? ' · Histórico completo de la sala' : ''}` : 'Escribe para buscar una sala o dos caracteres para localizarla por nodo.'}</small>
    {open && <div className="historyRoomOptions"><ul id={id + '-list'} role="listbox" aria-label="Salas disponibles">{visible.map((room, index) => <li key={room.id} id={id + '-' + index} role="option" aria-selected={room.id === value} className={active === index ? 'active' : ''} onMouseDown={event => event.preventDefault()} onClick={() => choose(room)}><b>{room.nombre}</b><small>{[room.sectorNombre, room.edificioNombre, room.pisoNombre].filter(Boolean).join(' › ')}</small></li>)}</ul>
      {term.length >= 2 && remote.status === 'loading' && remote.query === term && <p role="status">Buscando salas…</p>}
      {term.length >= 2 && remote.status === 'error' && remote.query === term && <p role="alert">No se pudo buscar. <button type="button" onClick={() => setRetry(value => value + 1)}>Reintentar</button></p>}

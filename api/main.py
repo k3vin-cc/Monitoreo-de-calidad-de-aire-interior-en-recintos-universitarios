@@ -460,6 +460,9 @@ def persist_packet(raw: dict[str, Any]):
                 for alert in alerts:
                     hub.publish_from_thread({"tipo": "alerta", **alert, "salaId": sala_id,
                         "ventanaConfirmacion": packet.timestamp.isoformat()})
+                for alert in resolved:
+                    hub.publish_from_thread({"tipo": "alerta", "id": alert["id"], "estado": "resuelta",
+                        "salaId": sala_id})
                 if alerts and TELEGRAM_BOT_TOKEN:
                     asyncio.run_coroutine_threadsafe(telegram_alerts(sala_id, alerts), hub.loop)
                 # Las resoluciones de Telegram esperan una segunda ventana de recuperación.
@@ -2497,43 +2500,137 @@ def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: dat
     return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="telemetria-{salaId}.csv"'})
 
 
-@app.get("/alertas/pagina")
-def alerts_page(salaId: str | None = None, estado: Literal["activa", "resuelta"] | None = None,
-                variable: Literal["CO2", "PM2.5", "PM10", "Temperatura", "Humedad"] | None = None,
-                desde: datetime | None = None, hasta: datetime | None = None,
-                pagina: int = Query(1, ge=1, le=100000), user=Depends(allow_roles("ADMIN", "ANALISTA")),
-                _slot=Depends(history_query_slot)):
-    """
-    Nombre   : alerts_page
-    Razón    : Entrega una página acotada de alertas con ubicación y vigencia de la sala.
-    Entradas : Filtros, página y usuario autenticado.
-    Salida   : Hasta 50 alertas autorizadas y señal de página siguiente.
-    Efectos  : Solo lectura de PostgreSQL.
-    """
-    if desde and hasta and ((desde.tzinfo is None) != (hasta.tzinfo is None) or desde > hasta):
-        raise HTTPException(422, "Selecciona un rango de fechas válido")
-    allowed = allowed_buildings(user)
-    sql = '''SELECT a.id,a."salaId",a.variable,a."valorMedido",a.nivel,a.estado,
+def alert_filters(salaId: str | None = None, sectorId: str | None = None,
+                  edificioId: str | None = None, pisoId: str | None = None,
+                  nodoId: str | None = None, estado: Literal["activa", "resuelta"] | None = None,
+                  variable: Literal["CO2", "PM2.5", "PM10", "Temperatura", "Humedad"] | None = None,
+                  nivel: int | None = Query(default=None, ge=3, le=4), desde: datetime | None = None,
+                  hasta: datetime | None = None, orden: Literal["fecha", "nivel", "duracion"] = "fecha",
+                  corte: datetime | None = None):
+    """Nombre: alert_filters. Razón: validar filtros compartidos de consulta y exportación.
+    Entradas: parámetros HTTP. Salida: filtros validados. Efectos: ninguno."""
+    if (desde and desde.tzinfo is None) or (hasta and hasta.tzinfo is None) or (corte and corte.tzinfo is None) or (desde and hasta and desde > hasta):
+        raise HTTPException(422, "Selecciona fechas válidas con zona horaria")
+    return {"salaId": salaId, "sectorId": sectorId, "edificioId": edificioId, "pisoId": pisoId,
+            "nodoId": nodoId, "estado": estado, "variable": variable, "nivel": nivel,
+            "desde": desde, "hasta": hasta, "orden": orden, "corte": corte}
+
+
+def alerts_query(filters: dict, user: dict):
+    """Nombre: alerts_query. Razón: compartir selección autorizada de pantalla y exportación.
+    Entradas: filtros validados y usuario. Salida: SQL parametrizado y parámetros. Efectos: ninguno."""
+    params = dict(filters, allowed=allowed_buildings(user), ahora=filters.get("corte") or datetime.now(timezone.utc))
+    where = ["(%(allowed)s::text[] IS NULL OR p.\"edificioId\"=ANY(%(allowed)s::text[]))"]
+    columns = {"salaId": 'a."salaId"', "sectorId": 'ed."sectorId"', "edificioId": 'ed.id',
+               "pisoId": 'p.id', "nodoId": 'a."nodoId"', "estado": 'a.estado',
+               "variable": 'a.variable', "nivel": 'a.nivel'}
+    for key, column in columns.items():
+        if filters[key] is not None:
+            where.append(column + " = %(" + key + ")s")
+    if filters["desde"] is not None:
+        where.append('a."ventanaConfirmacion" >= %(desde)s')
+    if filters["hasta"] is not None:
+        where.append('a."ventanaConfirmacion" <= %(hasta)s')
+    order = {"fecha": 'a."ventanaConfirmacion" DESC, a.id DESC',
+             "nivel": 'a.nivel DESC, a."ventanaConfirmacion" DESC, a.id DESC',
+             "duracion": '(GREATEST(COALESCE(a."resueltaEn", %(ahora)s), a."ventanaConfirmacion") - a."ventanaConfirmacion") DESC, a."ventanaConfirmacion" DESC, a.id DESC'}[filters["orden"]]
+    sql = '''SELECT a.id,a."salaId",a."nodoId",n.nombre AS "nodoNombre",a.variable,a."valorMedido",a.nivel,a.estado,
         a."ventanaConfirmacion",a."timestamp",a."resueltaEn",s.nombre AS "salaNombre",
-        p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre",
-        actual."nodoId" AS "nodoActualId",actual."ultimaTelemetria",actual."ventanaTimestamp"
+        p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre"
         FROM alertas a JOIN salas s ON s.id=a."salaId" JOIN pisos p ON p.id=s."pisoId"
         JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores sec ON sec.id=ed."sectorId"
-        LEFT JOIN LATERAL (SELECT v."nodoId",v."ultimaTelemetria",v."ventanaTimestamp"
-            FROM vw_estado_actual_salas v WHERE v."salaId"=s.id
-            ORDER BY v."ultimaTelemetria" DESC NULLS LAST,v."nodoId" LIMIT 1) actual ON TRUE
-        WHERE (%s::text IS NULL OR a."salaId"=%s::text) AND (%s::text IS NULL OR a.estado=%s::text)
-        AND (%s::text IS NULL OR a.variable=%s::text)
-        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion">=%s::timestamptz)
-        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion"<=%s::timestamptz)
-        AND (%s::text[] IS NULL OR p."edificioId"=ANY(%s::text[]))
-        ORDER BY a."ventanaConfirmacion" DESC,a.id DESC LIMIT 51 OFFSET %s'''
-    params = (salaId,salaId,estado,estado,variable,variable,desde,desde,hasta,hasta,allowed,allowed,(pagina-1)*50)
+        JOIN nodos n ON n.id=a."nodoId" WHERE ''' + " AND ".join(where) + " ORDER BY " + order
+    return sql, params
+
+
+@app.get("/alertas/nodos")
+def alert_nodes(q: str = Query(min_length=2, max_length=100), user=Depends(allow_roles("ADMIN", "ANALISTA")),
+                _slot=Depends(history_query_slot)):
+    """Nombre: alert_nodes. Razón: buscar nodos que originaron alertas autorizadas.
+    Entradas: texto y usuario. Salida: hasta 30 nodos coincidentes. Efectos: solo lectura."""
+    term = q.strip()
+    if len(term) < 2:
+        raise HTTPException(422, "Escribe al menos dos caracteres")
+    pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute('''SELECT DISTINCT n.id,n.nombre FROM nodos n JOIN alertas a ON a."nodoId"=n.id
+            JOIN salas s ON s.id=a."salaId" JOIN pisos p ON p.id=s."pisoId"
+            WHERE (%s::text[] IS NULL OR p."edificioId"=ANY(%s::text[]))
+            AND (n.nombre ILIKE %s OR n.id ILIKE %s) ORDER BY n.nombre,n.id LIMIT 30''',
+            (allowed_buildings(user), allowed_buildings(user), pattern, pattern))
+        return cur.fetchall()
+
+
+@app.get("/alertas/pagina")
+def alerts_page(pagina: int = Query(1, ge=1, le=100000), filters=Depends(alert_filters),
+                user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
+    """Nombre: alerts_page. Razón: obtener una página con estado reciente de cada sala.
+    Entradas: filtros, página y usuario. Salida: alertas y disponibilidad de página siguiente.
+    Efectos: solo lectura de PostgreSQL."""
+    sql, params = alerts_query(filters, user)
+    params["offset"] = (pagina - 1) * 50
+    sql = '''WITH elegidas AS MATERIALIZED (''' + sql + ''' LIMIT 51 OFFSET %(offset)s)
+        SELECT e.*,actual."nodoId" AS "nodoActualId",actual."ultimaTelemetria",actual."ventanaTimestamp"
+        FROM elegidas e LEFT JOIN LATERAL (
+            SELECT v."nodoId",v."ultimaTelemetria",v."ventanaTimestamp" FROM vw_estado_actual_salas v
+            WHERE v."salaId"=e."salaId" AND e.estado='activa'
+            ORDER BY v."ultimaTelemetria" DESC NULLS LAST,v."nodoId" LIMIT 1
+        ) actual ON TRUE'''
+    ordering = {"fecha": 'e."ventanaConfirmacion" DESC,e.id DESC',
+                "nivel": 'e.nivel DESC,e."ventanaConfirmacion" DESC,e.id DESC',
+                "duracion": '(GREATEST(COALESCE(e."resueltaEn", %(ahora)s),e."ventanaConfirmacion")-e."ventanaConfirmacion") DESC,e."ventanaConfirmacion" DESC,e.id DESC'}
+    sql += " ORDER BY " + ordering[filters["orden"]]
     with db() as conn, conn.cursor() as cur:
         set_history_statement_timeout(conn)
         cur.execute(sql, params)
         rows = cur.fetchall()
     return {"alertas": rows[:50], "hayMas": len(rows) > 50, "pagina": pagina}
+
+
+def stream_alert_export(sql: str, params: dict, formato: str):
+    """Nombre: stream_alert_export. Razón: exportar todas las alertas sin cargarlas en memoria.
+    Entradas: SQL y parámetros autorizados, formato. Salida: bloques CSV o JSON.
+    Efectos: lectura en una transacción durante la descarga."""
+    fields = ["id", "salaId", "salaNombre", "sectorNombre", "edificioNombre", "pisoNombre", "nodoId",
+              "nodoNombre", "variable", "valorMedido", "unidad", "nivel", "estado", "ventanaConfirmacion", "timestamp", "resueltaEn"]
+    units = {"CO2": "ppm", "PM2.5": "µg/m³", "PM10": "µg/m³", "Temperatura": "°C", "Humedad": "%"}
+    with db() as conn, conn.cursor(name="exportacion_alertas") as cur:
+        cur.itersize = 500
+        set_history_statement_timeout(conn)
+        cur.execute(sql, params)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+        if formato == "csv":
+            writer.writeheader()
+        else:
+            output.write("[")
+        first = True
+        for row in cur:
+            row["unidad"] = units.get(row["variable"], "")
+            row = {key: value.isoformat() if isinstance(value, datetime) else value for key, value in row.items()}
+            if formato == "csv":
+                writer.writerow({key: csv_safe_text(value) if isinstance(value, str) else value for key, value in row.items()})
+            else:
+                if not first: output.write(",")
+                output.write(json.dumps(row, ensure_ascii=False))
+                first = False
+            if output.tell() >= 65536:
+                yield output.getvalue().encode("utf-8")
+                output.seek(0); output.truncate(0)
+        if formato == "json": output.write("]")
+        if output.tell(): yield output.getvalue().encode("utf-8")
+
+
+@app.get("/alertas/exportacion")
+def export_alerts(formato: Literal["csv", "json"] = "csv", filters=Depends(alert_filters),
+                  user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
+    """Nombre: export_alerts. Razón: exportar las alertas filtradas autorizadas.
+    Entradas: filtros, formato y usuario. Salida: archivo CSV o JSON. Efectos: solo lectura."""
+    sql, params = alerts_query(filters, user)
+    return StreamingResponse(stream_alert_export(sql, params, formato),
+        media_type="application/json" if formato == "json" else "text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="alertas.{formato}"'})
 
 
 @app.get("/alertas")

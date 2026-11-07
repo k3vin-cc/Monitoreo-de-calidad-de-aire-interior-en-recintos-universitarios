@@ -399,6 +399,10 @@
 .alertSearch { margin-bottom: 18px; }
 .alertSearchGrid { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)); gap: 12px; align-items: start; }
 .alertSearchGrid label, .alertRoomSearch { display: flex; flex-direction: column; gap: 6px; color: #3d576b; font-size: 12px; font-weight: 600; }
+.alertMoreFilters { margin-top: 18px; grid-template-columns: minmax(210px, 2fr) repeat(5, minmax(110px, 1fr)); }
+.alertOrigin { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.alertOrigin small { color: var(--muted); font-weight: 400; }
+.alertOrigin .textButton { align-self: flex-start; margin: 0; }
 .alertSearchGrid input, .alertSearchGrid select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: #fff; color: var(--ink); }
 .alertRoomSearch { position: relative; }
 .alertRoomSearch small { color: var(--muted); font-weight: 400; }
