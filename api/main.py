@@ -59,6 +59,33 @@ def db():
     return psycopg.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, connect_timeout=5, row_factory=dict_row)
 
 
+def set_history_statement_timeout(conn):
+    """
+    Nombre   : set_history_statement_timeout
+    Razón    : Limitar la duración de una consulta de Histórico para liberar la conexión ante rangos costosos.
+    Entradas : Conexión psycopg abierta para una consulta de solo lectura.
+    Salida   : Ninguna; configura 60 segundos dentro de la transacción actual.
+    Efectos  : El límite se revierte al terminar la transacción y no cambia la configuración global de PostgreSQL.
+    """
+    conn.execute("SELECT set_config('statement_timeout', %s, true)", ("60000ms",))
+
+
+def history_query_slot():
+    """
+    Nombre   : history_query_slot
+    Razón    : Evitar que una ráfaga de consultas o exportaciones de Histórico monopolice las conexiones del API.
+    Entradas : Dependencia de petición FastAPI, sin parámetros del usuario.
+    Salida   : Ninguna; responde HTTP 429 si los dos espacios del proceso están ocupados.
+    Efectos  : Reserva un espacio durante la petición y lo libera al terminar, incluso si ocurre un error.
+    """
+    if not history_slots.acquire(blocking=False):
+        raise HTTPException(429, "Hay otras consultas de Histórico en curso. Intenta nuevamente en unos segundos.")
+    try:
+        yield
+    finally:
+        history_slots.release()
+
+
 def fetch_one(sql: str, params: tuple = ()):
     with db() as conn, conn.cursor() as cur:
         cur.execute(sql, params)
@@ -355,6 +382,7 @@ presence_checks: dict[str, tuple[str, threading.Event]] = {}
 presence_lock = threading.Lock()
 presence_last_request: dict[str, datetime] = {}
 presence_task: asyncio.Task | None = None
+history_slots = threading.BoundedSemaphore(2)
 
 
 def persist_packet(raw: dict[str, Any]):
@@ -1369,7 +1397,7 @@ async def verify_same_origin_mutations(request: Request, call_next):
     Razón    : Rechaza escrituras iniciadas desde otro origen para reducir CSRF.
     Entradas : Petición HTTP y respuesta producida por FastAPI.
     Salida   : Respuesta normal o rechazo 403 por origen inválido.
-    Efectos  : Añade no-store a respuestas de autenticación y aprovisionamiento.
+    Efectos  : Añade no-store a respuestas de autenticación, aprovisionamiento e Histórico.
     """
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         source = request.headers.get("origin") or request.headers.get("referer", "")
@@ -1379,7 +1407,14 @@ async def verify_same_origin_mutations(request: Request, call_next):
         if not parsed.netloc or parsed.netloc.lower() != host or parsed.scheme.lower() != scheme:
             return JSONResponse(status_code=403, content={"detail": "Origen no autorizado"})
     response = await call_next(request)
-    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento"):
+    path = request.url.path.rstrip("/")
+    history_read = path.startswith("/historico/") or (
+        path.startswith("/salas/") and path.endswith((
+            "/telemetria", "/telemetria-sin-fecha", "/historico/resumen",
+            "/historico/ventanas", "/exportacion"
+        ))
+    )
+    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento") or history_read:
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -1925,7 +1960,8 @@ def delete_floor(pisoId: str, body: dict[str, bool] = Body(default={}), user=Dep
 def search_history_rooms(q: str = Query(min_length=2, max_length=100),
                          sectorId: str | None = None, edificioId: str | None = None,
                          pisoId: str | None = None,
-                         user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+                         user=Depends(allow_roles("ADMIN", "ANALISTA")),
+                         _slot=Depends(history_query_slot)):
     """
     Nombre   : search_history_rooms
     Razón    : Localiza salas por ubicación o por nodos actuales e históricos.
@@ -1949,7 +1985,7 @@ def find_history_rooms(pattern: str, sectorId: str | None, edificioId: str | Non
     Salida   : hasta 30 salas coincidentes.
     Efectos  : Solo lectura de PostgreSQL.
     """
-    return fetch_all('''WITH nodos_coincidentes AS MATERIALIZED (
+    sql = '''WITH nodos_coincidentes AS MATERIALIZED (
             SELECT id,"salaId" FROM nodos WHERE translate(lower(nombre), 'áéíóúüñ', 'aeiouun') LIKE translate(lower(%s), 'áéíóúüñ', 'aeiouun')
         )
         SELECT s.id,s.nombre,s."pisoId",p.nombre AS "pisoNombre",
@@ -1973,9 +2009,13 @@ def find_history_rooms(pattern: str, sectorId: str | None, edificioId: str | Non
                       OR EXISTS (SELECT 1 FROM telemetria_tiempo_incierto ti
                                  WHERE ti."salaId"=s.id AND ti."nodoId"=n.id)
                ))
-        ORDER BY sec.nombre,ed.nombre,p.nivel,s.nombre LIMIT 30''',
-        (pattern, sectorId, sectorId, edificioId, edificioId, pisoId, pisoId,
-         *scope_params, pattern, pattern, pattern, pattern))
+        ORDER BY sec.nombre,ed.nombre,p.nivel,s.nombre LIMIT 30'''
+    params = (pattern, sectorId, sectorId, edificioId, edificioId, pisoId, pisoId,
+              *scope_params, pattern, pattern, pattern, pattern)
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute(sql, params)
+        return cur.fetchall()
 
 
 @app.get("/salas")
@@ -2065,19 +2105,22 @@ def sala_state_complements(salaId: str, user=Depends(allow_roles("ADMIN", "ANALI
 
 
 @app.get("/salas/{salaId}/telemetria")
-def room_telemetry(salaId: str, desde: datetime | None = None, hasta: datetime | None = None, limite: int = Query(1000, ge=1, le=10000), user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+def room_telemetry(salaId: str, desde: datetime | None = None, hasta: datetime | None = None, limite: int = Query(1000, ge=1, le=10000), user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
     if desde and hasta:
         if (desde.tzinfo is None) != (hasta.tzinfo is None):
             raise HTTPException(422,"Usa fechas con la misma zona horaria")
         if desde > hasta:
             raise HTTPException(422,"La fecha inicial debe ser anterior a la fecha final")
     ensure_room_access(user, salaId)
-    return [row["data"] for row in fetch_all(HISTORY_UNION_SQL + ' ORDER BY fecha DESC,nodo,orden DESC LIMIT %s',
-        (salaId, desde, desde, hasta, hasta, salaId, desde, desde, hasta, hasta, limite))]
+    params = (salaId, desde, desde, hasta, hasta, salaId, desde, desde, hasta, hasta, limite)
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute(HISTORY_UNION_SQL + ' ORDER BY fecha DESC,nodo,orden DESC LIMIT %s', params)
+        return [row["data"] for row in cur.fetchall()]
 
 
 @app.get("/salas/{salaId}/telemetria-sin-fecha")
-def room_telemetry_without_date(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+def room_telemetry_without_date(salaId: str, user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
     """
     Nombre   : room_telemetry_without_date
     Razón    : Informa cuántas ventanas locales recuperadas siguen sin fecha absoluta.
@@ -2086,20 +2129,91 @@ def room_telemetry_without_date(salaId: str, user=Depends(allow_roles("ADMIN", "
     Efectos  : Ninguno; consulta de solo lectura.
     """
     ensure_room_access(user, salaId)
-    return fetch_one('''SELECT COUNT(*) AS total FROM telemetria_tiempo_incierto
-        WHERE "salaId"=%s AND "timestampResuelto" IS NULL''', (salaId,))
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute('''SELECT COUNT(*) AS total FROM telemetria_tiempo_incierto
+            WHERE "salaId"=%s AND "timestampResuelto" IS NULL''', (salaId,))
+        return cur.fetchone()
 
 
-HISTORY_UNION_SQL = '''SELECT data FROM (
+HISTORY_ESTIMATED_DATA_SQL = '''jsonb_build_object(
+    'nodoId',ti."nodoId",'salaId',ti."salaId",'timestamp',ti."timestampResuelto",
+    'recibidoEn',ti."recibidoEn",'ordenRegistro',ti."ordenRegistro",
+    'ventanasDescartadas',ti."ventanasDescartadas",'calidadHora','estimada_ntp_posterior',
+    'horaVerificada',ti."paqueteOriginal"->'horaVerificada',
+    'timestampEstimado',ti."paqueteOriginal"->'timestampEstimado',
+    'sesionArranque',ti."paqueteOriginal"->'sesionArranque',
+    'finMonotonicoUs',ti."paqueteOriginal"->'finMonotonicoUs',
+    'duracionVentanaMs',ti."paqueteOriginal"->'duracionVentanaMs',
+    'ventanaId',ti."paqueteOriginal"->'ventanaId',
+    'ventanaInicio',ti."paqueteOriginal"->'ventanaInicio',
+    'ventanaFinReal',ti."paqueteOriginal"->'ventanaFinReal',
+    'firmwareVersion',ti."paqueteOriginal"->'firmwareVersion',
+    'conteosValidos',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'conteosValidos')='object' THEN jsonb_build_object(
+      'co2',ti."paqueteOriginal"#>'{conteosValidos,co2}','pm25',ti."paqueteOriginal"#>'{conteosValidos,pm25}',
+      'pm10',ti."paqueteOriginal"#>'{conteosValidos,pm10}','temperatura',ti."paqueteOriginal"#>'{conteosValidos,temperatura}',
+      'humedad',ti."paqueteOriginal"#>'{conteosValidos,humedad}') END,
+    'versionReglas',ti."paqueteOriginal"->'versionReglas',
+    'esRetransmision',ti."paqueteOriginal"->'esRetransmision',
+    'co2',ti."paqueteOriginal"->'co2','pm25',ti."paqueteOriginal"->'pm25',
+    'pm10',ti."paqueteOriginal"->'pm10','temperatura',ti."paqueteOriginal"->'temperatura',
+    'humedad',ti."paqueteOriginal"->'humedad',
+    'icaiScore',ti."paqueteOriginal"->'icaiScore','icaiCategoria',ti."paqueteOriginal"->'icaiCategoria',
+    'icaiEstado',ti."paqueteOriginal"->'icaiEstado','causasICAI',ti."paqueteOriginal"->'causasICAI',
+    'ictScore',ti."paqueteOriginal"->'ictScore','ictCategoria',ti."paqueteOriginal"->'ictCategoria',
+    'ictEstado',ti."paqueteOriginal"->'ictEstado','causasICT',ti."paqueteOriginal"->'causasICT',
+    'icgScore',ti."paqueteOriginal"->'icgScore','icgCategoria',ti."paqueteOriginal"->'icgCategoria',
+    'icgEstado',ti."paqueteOriginal"->'icgEstado','causasICG',ti."paqueteOriginal"->'causasICG',
+    'celdaMatriz',ti."paqueteOriginal"->'celdaMatriz',
+    'recomendaciones',ti."paqueteOriginal"->'recomendaciones',
+    'mediasClasificacion',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'mediasClasificacion')='object' THEN jsonb_build_object(
+      'co2',ti."paqueteOriginal"#>'{mediasClasificacion,co2}','pm25',ti."paqueteOriginal"#>'{mediasClasificacion,pm25}',
+      'pm10',ti."paqueteOriginal"#>'{mediasClasificacion,pm10}','pm25Cf1',ti."paqueteOriginal"#>'{mediasClasificacion,pm25Cf1}',
+      'pm10Cf1',ti."paqueteOriginal"#>'{mediasClasificacion,pm10Cf1}','temperatura',ti."paqueteOriginal"#>'{mediasClasificacion,temperatura}',
+      'humedad',ti."paqueteOriginal"#>'{mediasClasificacion,humedad}') END,
+    'subniveles',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'subniveles')='object' THEN jsonb_build_object(
+      'co2',ti."paqueteOriginal"#>'{subniveles,co2}','pm25',ti."paqueteOriginal"#>'{subniveles,pm25}',
+      'pm10',ti."paqueteOriginal"#>'{subniveles,pm10}','temperatura',ti."paqueteOriginal"#>'{subniveles,temperatura}',
+      'humedad',ti."paqueteOriginal"#>'{subniveles,humedad}') END,
+    'persistencia',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'persistencia')='object' THEN jsonb_build_object(
+      'ventanaAnteriorId',ti."paqueteOriginal"#>'{persistencia,ventanaAnteriorId}',
+      'confirmada',ti."paqueteOriginal"#>'{persistencia,confirmada}','motivo',ti."paqueteOriginal"#>'{persistencia,motivo}',
+      'causasConfirmadas',ti."paqueteOriginal"#>'{persistencia,causasConfirmadas}') END,
+    'invalidaciones',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'invalidaciones')='object' THEN jsonb_build_object(
+      'co2',CASE WHEN jsonb_typeof(ti."paqueteOriginal"#>'{invalidaciones,co2}')='object' THEN jsonb_build_object(
+        'sinLectura',ti."paqueteOriginal"#>'{invalidaciones,co2,sinLectura}',
+        'fueraRango',ti."paqueteOriginal"#>'{invalidaciones,co2,fueraRango}') END,
+      'temperatura',CASE WHEN jsonb_typeof(ti."paqueteOriginal"#>'{invalidaciones,temperatura}')='object' THEN jsonb_build_object(
+        'sinLectura',ti."paqueteOriginal"#>'{invalidaciones,temperatura,sinLectura}',
+        'fueraRango',ti."paqueteOriginal"#>'{invalidaciones,temperatura,fueraRango}') END,
+      'humedad',CASE WHEN jsonb_typeof(ti."paqueteOriginal"#>'{invalidaciones,humedad}')='object' THEN jsonb_build_object(
+        'sinLectura',ti."paqueteOriginal"#>'{invalidaciones,humedad,sinLectura}',
+        'fueraRango',ti."paqueteOriginal"#>'{invalidaciones,humedad,fueraRango}') END,
+      'pm25',CASE WHEN jsonb_typeof(ti."paqueteOriginal"#>'{invalidaciones,pm25}')='object' THEN jsonb_build_object(
+        'sinLectura',ti."paqueteOriginal"#>'{invalidaciones,pm25,sinLectura}',
+        'tramaInvalida',ti."paqueteOriginal"#>'{invalidaciones,pm25,tramaInvalida}',
+        'fueraRango',ti."paqueteOriginal"#>'{invalidaciones,pm25,fueraRango}') END,
+      'pm10',CASE WHEN jsonb_typeof(ti."paqueteOriginal"#>'{invalidaciones,pm10}')='object' THEN jsonb_build_object(
+        'sinLectura',ti."paqueteOriginal"#>'{invalidaciones,pm10,sinLectura}',
+        'tramaInvalida',ti."paqueteOriginal"#>'{invalidaciones,pm10,tramaInvalida}',
+        'fueraRango',ti."paqueteOriginal"#>'{invalidaciones,pm10,fueraRango}') END,
+      'scd40ErroresLectura',ti."paqueteOriginal"#>'{invalidaciones,scd40ErroresLectura}') END,
+    'calibracion',CASE WHEN jsonb_typeof(ti."paqueteOriginal"->'calibracion')='object' THEN jsonb_build_object(
+      'versionConfiguracion',ti."paqueteOriginal"#>'{calibracion,versionConfiguracion}',
+      'compensacionTermicaFirmwareC',ti."paqueteOriginal"#>'{calibracion,compensacionTermicaFirmwareC}',
+      'compensacionSensorC',ti."paqueteOriginal"#>'{calibracion,compensacionSensorC}',
+      'calibracionInternaSensor',ti."paqueteOriginal"#>'{calibracion,calibracionInternaSensor}') END
+)'''
+
+
+HISTORY_UNION_SQL = f'''SELECT data FROM (
     SELECT to_jsonb(t) || jsonb_build_object('calidadHora','verificada') AS data,
            t."timestamp" AS fecha, t."nodoId" AS nodo, t."ordenRegistro" AS orden
       FROM telemetria t
      WHERE t."salaId"=%s AND (%s::timestamptz IS NULL OR t."timestamp">=%s::timestamptz)
        AND (%s::timestamptz IS NULL OR t."timestamp"<=%s::timestamptz)
     UNION ALL
-    SELECT ti."paqueteOriginal" || jsonb_build_object(
-           'timestamp',ti."timestampResuelto",'calidadHora','estimada_ntp_posterior',
-           'salaId',ti."salaId",'recibidoEn',ti."recibidoEn") AS data,
+    SELECT {HISTORY_ESTIMATED_DATA_SQL} AS data,
            ti."timestampResuelto" AS fecha, ti."nodoId" AS nodo, ti."ordenRegistro" AS orden
       FROM telemetria_tiempo_incierto ti
      WHERE ti."salaId"=%s AND ti."timestampResuelto" IS NOT NULL
@@ -2123,7 +2237,7 @@ HISTORY_METRICS_SQL = """SELECT data, fecha, nodo, orden FROM (
        AND ti."timestampResuelto" IS NOT NULL AND ti."timestampResuelto">=%s AND ti."timestampResuelto"<=%s
 ) metricas ORDER BY fecha,nodo,orden DESC"""
 
-HISTORY_PAGE_SQL = """WITH elegidas AS MATERIALIZED (
+HISTORY_PAGE_SQL = f"""WITH elegidas AS MATERIALIZED (
     SELECT 'verificada' AS origen,t."timestamp" AS fecha,t."nodoId" AS nodo,
            t."ordenRegistro" AS orden,t.id AS identificador FROM telemetria t
      WHERE t."salaId"=%s AND t."timestamp">=%s AND t."timestamp"<=%s
@@ -2134,8 +2248,7 @@ HISTORY_PAGE_SQL = """WITH elegidas AS MATERIALIZED (
     ORDER BY fecha,nodo,orden DESC,origen,identificador LIMIT %s OFFSET %s
 )
 SELECT CASE WHEN e.origen='verificada' THEN to_jsonb(t) || jsonb_build_object('calidadHora','verificada')
-       ELSE ti."paqueteOriginal" || jsonb_build_object('timestamp',ti."timestampResuelto",
-           'calidadHora','estimada_ntp_posterior','salaId',ti."salaId",'recibidoEn',ti."recibidoEn") END AS data
+       ELSE {HISTORY_ESTIMATED_DATA_SQL} END AS data
   FROM elegidas e LEFT JOIN telemetria t ON e.origen='verificada' AND t."salaId"=%s
        AND t."timestamp"=e.fecha AND t.id=e.identificador
   LEFT JOIN telemetria_tiempo_incierto ti ON e.origen='estimada_ntp_posterior' AND ti.id=e.identificador
@@ -2241,6 +2354,7 @@ def summarize_history(sala_id: str, desde: datetime, hasta: datetime):
     total = 0
     with db() as conn, conn.cursor(name='resumen_historico') as cur:
         cur.itersize = 500
+        set_history_statement_timeout(conn)
         cur.execute(HISTORY_METRICS_SQL, (sala_id, desde, hasta, sala_id, desde, hasta))
         for result in cur:
             row = result['data']
@@ -2264,7 +2378,8 @@ def summarize_history(sala_id: str, desde: datetime, hasta: datetime):
 
 @app.get('/salas/{salaId}/historico/resumen')
 def history_summary(salaId: str, desde: datetime, hasta: datetime,
-                    user=Depends(allow_roles('ADMIN', 'ANALISTA'))):
+                    user=Depends(allow_roles('ADMIN', 'ANALISTA')),
+                    _slot=Depends(history_query_slot)):
     """
     Nombre   : history_summary
     Razón    : Entregar estadísticas completas y puntos reducidos para Histórico.
@@ -2280,7 +2395,8 @@ def history_summary(salaId: str, desde: datetime, hasta: datetime,
 @app.get('/salas/{salaId}/historico/ventanas')
 def history_page(salaId: str, desde: datetime, hasta: datetime,
                  pagina: int = Query(1, ge=1, le=42949672),
-                 user=Depends(allow_roles('ADMIN', 'ANALISTA'))):
+                 user=Depends(allow_roles('ADMIN', 'ANALISTA')),
+                 _slot=Depends(history_query_slot)):
     """
     Nombre   : history_page
     Razón    : Cargar una página de ventanas completas sin transferir el rango entero.
@@ -2291,7 +2407,10 @@ def history_page(salaId: str, desde: datetime, hasta: datetime,
     validate_history_range(desde, hasta)
     ensure_room_access(user, salaId)
     params = (salaId, desde, hasta, salaId, desde, hasta, 50, (pagina - 1) * 50, salaId)
-    return [row['data'] for row in fetch_all(HISTORY_PAGE_SQL, params)]
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute(HISTORY_PAGE_SQL, params)
+        return [row['data'] for row in cur.fetchall()]
 
 
 def csv_safe_text(value: str) -> str:
@@ -2319,6 +2438,7 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
     params = (sala_id, desde, desde, hasta, hasta, sala_id, desde, desde, hasta, hasta)
     with db() as conn, conn.cursor(name="exportacion_sala") as cur:
         cur.itersize = 100
+        set_history_statement_timeout(conn)
         cur.execute(HISTORY_UNION_SQL + ' ORDER BY fecha,nodo,orden', params)
         if formato == "json":
             yield b"["
@@ -2356,7 +2476,7 @@ def stream_room_export(sala_id: str, formato: str, desde: datetime | None, hasta
 
 
 @app.get("/salas/{salaId}/exportacion")
-def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: datetime | None = None, hasta: datetime | None = None, user=Depends(allow_roles("ADMIN", "ANALISTA"))):
+def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: datetime | None = None, hasta: datetime | None = None, user=Depends(allow_roles("ADMIN", "ANALISTA")), _slot=Depends(history_query_slot)):
     if desde and hasta:
         if (desde.tzinfo is None) != (hasta.tzinfo is None):
             raise HTTPException(422,"Usa fechas con la misma zona horaria")
