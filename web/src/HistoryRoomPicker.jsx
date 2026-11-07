@@ -234,7 +234,7 @@ export default function HistoryRoomPicker({
      <LocationFilter label="Piso" options={floors} value={floor} disabled={disabled || !building} onChange={next => changeScope('floor', next)} />
    </div>
    <div className="historyPickerRow"><div className="historyRoomField"><label htmlFor={id}>Sala o nodo</label>
-   <div className="historyRoomInput"><input id={id} ref={input} role="combobox" aria-expanded={open} aria-controls={id + '-list'} aria-autocomplete="list" aria-activedescendant={open && active >= 0 ? id + '-' + active : undefined} disabled={disabled} value={open ? query : selected?.nombre || ''} onFocus={() => {
+   <div className="historyRoomInput"><input id={id} ref={input} autoComplete="off" role="combobox" aria-expanded={open} aria-controls={id + '-list'} aria-autocomplete="list" aria-activedescendant={open && active >= 0 ? id + '-' + active : undefined} disabled={disabled} value={open ? query : selected?.nombre || ''} onFocus={() => {
             setOpen(true);
             setQuery('');
             setActive(-1);

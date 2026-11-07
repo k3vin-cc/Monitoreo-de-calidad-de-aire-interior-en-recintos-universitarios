@@ -18,7 +18,7 @@ export default function HistoryPage({
   Table
 }) {
   const [params, setParams] = useSearchParams();
-  const room = params.get('sala') || '';
+  const [room, setRoom] = useState(() => params.get('sala') || '');
   const [rooms, setRooms] = useState([]),
     [loading, setLoading] = useState(true),
     [period, setPeriod] = useState('1'),
@@ -35,6 +35,14 @@ export default function HistoryPage({
   const [dateDialog, setDateDialog] = useState(false);
   const version = useRef(0),
     downloadLock = useRef(false);
+  useEffect(() => {
+    const linkedRoom = params.get('sala');
+    if (!linkedRoom) return;
+    setRoom(linkedRoom);
+    const next = new URLSearchParams(params);
+    next.delete('sala');
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   useEffect(() => {
     version.current++;
     setBusy(false);
@@ -76,14 +84,10 @@ export default function HistoryPage({
     setTo(localDate(end));
     setFrom(localDate(new Date(end.getTime() - days * 86400000)));
   }
-  /** Nombre: chooseRoom. Razón: mantener la sala de Histórico sincronizada con la URL.
-   * Entradas: identificador elegido. Salida: parámetro sala actualizado. Efectos: navegación local. */
+  /** Nombre: chooseRoom. Razón: mantener la elección solo durante la visita actual.
+   * Entradas: identificador elegido. Salida: filtro actualizado. Efectos: estado local. */
   function chooseRoom(id) {
-    const next = new URLSearchParams(params);
-    if (id) next.set('sala', id);else next.delete('sala');
-    setParams(next, {
-      replace: true
-    });
+    setRoom(id);
   }
   /** Nombre: queryHistory. Razón: asociar datos y exportaciones a la misma consulta.
    * Entradas: filtros validados. Salida: filas y consulta aplicada. Efectos: GET de telemetría. */
