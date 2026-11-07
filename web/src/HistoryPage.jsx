@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from './services';
 import HistoryRoomPicker from './HistoryRoomPicker';
@@ -26,6 +26,10 @@ export default function HistoryPage({
     [from, setFrom] = useState(() => localDate(new Date(Date.now() - 86400000))),
     [to, setTo] = useState(() => localDate(new Date())),
     [rows, setRows] = useState([]),
+    [tableRows, setTableRows] = useState([]),
+    [total, setTotal] = useState(0),
+    [stats, setStats] = useState([]),
+    [pageBusy, setPageBusy] = useState(false),
     [applied, setApplied] = useState(null),
     [busy, setBusy] = useState(false),
     [downloading, setDownloading] = useState(''),
@@ -50,6 +54,7 @@ export default function HistoryPage({
   useEffect(() => {
     version.current++;
     setBusy(false);
+    setPageBusy(false);
   }, [room]);
   useEffect(() => {
     let active = true;
@@ -70,18 +75,8 @@ export default function HistoryPage({
   }, []);
   const currentRoom = rooms.find(r => r.id === room),
     changed = applied && (room !== applied.room || period !== applied.period || period === 'custom' && (from !== applied.from || to !== applied.to)),
-    pages = Math.max(1, Math.ceil(rows.length / 50)),
+    pages = Math.max(1, Math.ceil(total / 50)),
     current = Math.min(page, pages);
-  const stats = useMemo(() => ['co2', 'pm25', 'pm10', 'temperatura', 'humedad'].map(key => {
-    const values = rows.map(r => r[key]).filter(v => v != null && Number.isFinite(v));
-    return {
-      key,
-      count: values.length,
-      avg: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
-      min: values.length ? Math.min(...values) : null,
-      max: values.length ? Math.max(...values) : null
-    };
-  }), [rows]);
   /** Nombre: preset. Razón: acotar rangos frecuentes. Entradas: días. Salida: filtros locales. Efectos: ninguno persistente. */
   function preset(days) {
     const end = new Date();
@@ -120,13 +115,15 @@ export default function HistoryPage({
     try {
       setFrom(start);
       setTo(end);
-      const data = await api.telemetry(room, {
-        desde: snapshot.desde,
-        hasta: snapshot.hasta,
-        limite: 10000
-      });
+      const [summary, firstPage] = await Promise.all([
+        api.historySummary(room, { desde: snapshot.desde, hasta: snapshot.hasta }),
+        api.historyPage(room, { desde: snapshot.desde, hasta: snapshot.hasta, pagina: 1 })
+      ]);
       if (id === version.current) {
-        setRows(data.slice().reverse());
+        setRows(summary.grafico);
+        setStats(summary.stats);
+        setTotal(summary.total);
+        setTableRows(firstPage);
         setUndated(0);
         setApplied(snapshot);
         setPage(1);
@@ -144,6 +141,28 @@ export default function HistoryPage({
       if (id === version.current) setError(e.message);
     } finally {
       if (id === version.current) setBusy(false);
+    }
+  }
+  /** Nombre: loadPage. Razón: consultar solo las ventanas de la página elegida.
+   * Entradas: número de página y consulta aplicada. Salida: filas y página actualizadas.
+   * Efectos: petición de lectura; ignora respuestas de una consulta anterior. */
+  async function loadPage(next) {
+    if (!applied || room !== applied.room || busy || pageBusy || next < 1 || next > pages) return;
+    const id = version.current;
+    setPageBusy(true);
+    setError('');
+    try {
+      const data = await api.historyPage(applied.room, {
+        desde: applied.desde, hasta: applied.hasta, pagina: next
+      });
+      if (id === version.current) {
+        setTableRows(data);
+        setPage(next);
+      }
+    } catch (e) {
+      if (id === version.current) setError(e.message);
+    } finally {
+      if (id === version.current) setPageBusy(false);
     }
   }
   /** Nombre: download. Razón: exportar el rango aplicado con bloqueo de duplicados.
@@ -177,7 +196,7 @@ export default function HistoryPage({
                   setPeriod(next);
                   preset(Number(next));
                 }
-              }}><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="custom">Personalizado…</option></select></label><button className="primary" disabled={!currentRoom || busy}>{busy ? 'Consultando…' : 'Consultar'}</button></HistoryRoomPicker></div>{period === 'custom' && <p className="helper">{from.replace('T', ' ')} — {to.replace('T', ' ')} <button type="button" className="secondary compact" onClick={() => setDateDialog(true)}>Editar período</button></p>}{dateDialog && <HistoryDateDialog from={from} to={to} onCancel={() => setDateDialog(false)} onApply={(start, end) => {
+              }}><option value="1">Últimas 24 horas</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="custom">Personalizado…</option></select></label><button className="primary" disabled={!currentRoom || busy || pageBusy}>{busy ? 'Consultando…' : 'Consultar'}</button></HistoryRoomPicker></div>{period === 'custom' && <p className="helper">{from.replace('T', ' ')} — {to.replace('T', ' ')} <button type="button" className="secondary compact" onClick={() => setDateDialog(true)}>Editar período</button></p>}{dateDialog && <HistoryDateDialog from={from} to={to} onCancel={() => setDateDialog(false)} onApply={(start, end) => {
           setFrom(start);
           setTo(end);
           setPeriod('custom');
@@ -188,5 +207,5 @@ export default function HistoryPage({
         })} — {formatDate(applied.hasta, {
           dateStyle: 'medium',
           timeStyle: 'short'
-        })}</p><div className="inlineActions"><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('csv')}>Exportar CSV</button><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('json')}>Exportar JSON</button>{downloading && <span role="status">Preparando descarga…</span>}</div><small>Exporta todas las ventanas fechadas del rango aplicado, aunque la vista alcance su límite.</small>{undatedStatus === 'loading' && <p role="status">Comprobando ventanas sin fecha…</p>}{undatedStatus === 'error' && <p className="notice error" role="alert">No se pudo comprobar cuántas ventanas carecen de fecha. Las mediciones mostradas sí se cargaron.</p>}{undatedStatus === 'ready' && undated > 0 && <p role="status">{undated} ventanas de esta sala conservan sus datos, pero no tienen fecha recuperable.</p>}</section>}{rows.length >= 10000 && <div className="notice" role="status">Se alcanzó el límite de 10.000 ventanas. La vista y su resumen podrían cubrir sólo la parte más reciente del período. Acota las fechas o exporta el rango completo.</div>}{applied && rows.length > 0 ? <><section className="panel chartPanel"><h2>Evolución de las mediciones</h2><p>{rows.length} ventanas mostradas · puntos naranjas: hora estimada · los huecos no se interpolan.</p><Chart rows={rows} /></section><section className="panel"><h2>Resumen de las ventanas mostradas</h2><div className="tableScroll"><table><thead><tr><th>Variable</th><th>Valores válidos</th><th>Promedio</th><th>Mínimo</th><th>Máximo</th></tr></thead><tbody>{stats.map((stat, i) => <tr key={stat.key}><td>{['CO₂ (ppm)', 'PM₂.₅ (µg/m³)', 'PM₁₀ (µg/m³)', 'Temperatura (°C)', 'Humedad (%)'][i]}</td><td>{stat.count} / {rows.length}</td><td>{number(stat.avg)}</td><td>{number(stat.min)}</td><td>{number(stat.max)}</td></tr>)}</tbody></table></div></section><section className="panel"><h2>Ventanas consultadas</h2><nav className="historyPages" aria-label="Páginas de mediciones"><span>{rows.length} ventanas · página {current} de {pages}</span><button className="secondary compact" disabled={current === 1} onClick={() => setPage(current - 1)}>Anterior</button><button className="secondary compact" disabled={current === pages} onClick={() => setPage(current + 1)}>Siguiente</button></nav><Table rows={rows.slice((current - 1) * 50, current * 50)} /></section></> : !busy && <div className="empty"><b>{applied ? 'No hay mediciones para la consulta aplicada' : 'Elige una sala y un período'}</b><span>{applied ? 'Prueba otro período o sala y vuelve a consultar.' : 'Pulsa Consultar para cargar el histórico.'}</span></div>}</div>;
+        })}</p><div className="inlineActions"><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('csv')}>Exportar CSV</button><button className="secondary compact" disabled={Boolean(downloading) || busy} onClick={() => download('json')}>Exportar JSON</button>{downloading && <span role="status">Preparando descarga…</span>}</div><small>Exporta todas las ventanas fechadas del rango aplicado.</small>{undatedStatus === 'loading' && <p role="status">Comprobando ventanas sin fecha…</p>}{undatedStatus === 'error' && <p className="notice error" role="alert">No se pudo comprobar cuántas ventanas carecen de fecha. Las mediciones mostradas sí se cargaron.</p>}{undatedStatus === 'ready' && undated > 0 && <p role="status">{undated} ventanas de esta sala conservan sus datos, pero no tienen fecha recuperable.</p>}</section>}{applied && total > 0 ? <><section className="panel chartPanel"><h2>Evolución de las mediciones</h2><p>{total} ventanas · {rows.length} puntos representativos · se conservan extremos y huecos · naranja: hora estimada.</p><Chart rows={rows} /></section><section className="panel"><h2>Resumen del período completo</h2><div className="tableScroll"><table><thead><tr><th>Variable</th><th>Valores válidos</th><th>Promedio</th><th>Mínimo</th><th>Máximo</th></tr></thead><tbody>{stats.map((stat, i) => <tr key={stat.key}><td>{['CO₂ (ppm)', 'PM₂.₅ (µg/m³)', 'PM₁₀ (µg/m³)', 'Temperatura (°C)', 'Humedad (%)'][i]}</td><td>{stat.count} / {total}</td><td>{number(stat.avg)}</td><td>{number(stat.min)}</td><td>{number(stat.max)}</td></tr>)}</tbody></table></div></section><section className="panel"><h2>Ventanas consultadas</h2><nav className="historyPages" aria-label="Páginas de mediciones"><span>{total} ventanas · página {current} de {pages}{pageBusy ? ' · Cargando…' : ''}</span><button className="secondary compact" disabled={current === 1 || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current - 1)}>Anterior</button><button className="secondary compact" disabled={current === pages || pageBusy || busy || room !== applied.room} onClick={() => loadPage(current + 1)}>Siguiente</button></nav><Table rows={tableRows} /></section></> : !busy && <div className="empty"><b>{applied ? 'No hay mediciones para la consulta aplicada' : 'Elige una sala y un período'}</b><span>{applied ? 'Prueba otro período o sala y vuelve a consultar.' : 'Pulsa Consultar para cargar el histórico.'}</span></div>}</div>;
 }

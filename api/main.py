@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -2105,6 +2106,169 @@ HISTORY_UNION_SQL = '''SELECT data FROM (
        AND (%s::timestamptz IS NULL OR ti."timestampResuelto">=%s::timestamptz)
        AND (%s::timestamptz IS NULL OR ti."timestampResuelto"<=%s::timestamptz)
 ) historial'''
+
+
+# Campos necesarios para el gráfico y el resumen; no transmite el paquete completo.
+HISTORY_METRICS_SQL = """SELECT data, fecha, nodo, orden FROM (
+    SELECT jsonb_build_object('timestamp',t."timestamp",'co2',t.co2,'pm25',t.pm25,
+      'pm10',t.pm10,'temperatura',t.temperatura,'humedad',t.humedad,
+      'calidadHora','verificada') AS data,t."timestamp" AS fecha,t."nodoId" AS nodo,t."ordenRegistro" AS orden
+      FROM telemetria t WHERE t."salaId"=%s AND t."timestamp">=%s AND t."timestamp"<=%s
+    UNION ALL
+    SELECT jsonb_build_object('timestamp',ti."timestampResuelto",'co2',ti."paqueteOriginal"->'co2',
+      'pm25',ti."paqueteOriginal"->'pm25','pm10',ti."paqueteOriginal"->'pm10',
+      'temperatura',ti."paqueteOriginal"->'temperatura','humedad',ti."paqueteOriginal"->'humedad',
+      'calidadHora','estimada_ntp_posterior'),ti."timestampResuelto",ti."nodoId",ti."ordenRegistro"
+      FROM telemetria_tiempo_incierto ti WHERE ti."salaId"=%s
+       AND ti."timestampResuelto" IS NOT NULL AND ti."timestampResuelto">=%s AND ti."timestampResuelto"<=%s
+) metricas ORDER BY fecha,nodo,orden DESC"""
+
+HISTORY_PAGE_SQL = """WITH elegidas AS MATERIALIZED (
+    SELECT 'verificada' AS origen,t."timestamp" AS fecha,t."nodoId" AS nodo,
+           t."ordenRegistro" AS orden,t.id AS identificador FROM telemetria t
+     WHERE t."salaId"=%s AND t."timestamp">=%s AND t."timestamp"<=%s
+    UNION ALL
+    SELECT 'estimada_ntp_posterior',ti."timestampResuelto",ti."nodoId",ti."ordenRegistro",ti.id
+      FROM telemetria_tiempo_incierto ti WHERE ti."salaId"=%s AND ti."timestampResuelto" IS NOT NULL
+       AND ti."timestampResuelto">=%s AND ti."timestampResuelto"<=%s
+    ORDER BY fecha,nodo,orden DESC,origen,identificador LIMIT %s OFFSET %s
+)
+SELECT CASE WHEN e.origen='verificada' THEN to_jsonb(t) || jsonb_build_object('calidadHora','verificada')
+       ELSE ti."paqueteOriginal" || jsonb_build_object('timestamp',ti."timestampResuelto",
+           'calidadHora','estimada_ntp_posterior','salaId',ti."salaId",'recibidoEn',ti."recibidoEn") END AS data
+  FROM elegidas e LEFT JOIN telemetria t ON e.origen='verificada' AND t."salaId"=%s
+       AND t."timestamp"=e.fecha AND t.id=e.identificador
+  LEFT JOIN telemetria_tiempo_incierto ti ON e.origen='estimada_ntp_posterior' AND ti.id=e.identificador
+ ORDER BY e.fecha,e.nodo,e.orden DESC,e.origen,e.identificador"""
+
+HISTORY_METRICS = ('co2', 'pm25', 'pm10', 'temperatura', 'humedad')
+
+
+def validate_history_range(desde: datetime, hasta: datetime):
+    """
+    Nombre   : validate_history_range
+    Razón    : Rechaza rangos incompletos, ambiguos o invertidos en las consultas de Histórico.
+    Entradas : Fechas desde y hasta provenientes de FastAPI.
+    Salida   : Ninguna; produce HTTP 422 si el rango no es válido.
+    Efectos  : Ninguno.
+    """
+    if desde.tzinfo is None or hasta.tzinfo is None or desde > hasta:
+        raise HTTPException(422, 'Selecciona un rango válido con zona horaria')
+
+
+def history_numeric(value):
+    """
+    Nombre   : history_numeric
+    Razón    : Conservar el criterio del resumen previo: solo números finitos cuentan.
+    Entradas : Valor de una variable en una ventana verificada o estimada.
+    Salida   : Número finito o None.
+    Efectos  : Ninguno.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return value
+
+
+def history_bucket_rows(bucket):
+    """
+    Nombre   : history_bucket_rows
+    Razón    : Reducir puntos conservando extremos y bordes de cada tramo continuo.
+    Entradas : Ventanas de un bloque con tiempos ordenados.
+    Salida   : Ventanas originales seleccionadas por orden temporal.
+    Efectos  : Ninguno; no altera mediciones ni calcula valores nuevos.
+    """
+    chosen = {0, len(bucket) - 1}
+    for key in HISTORY_METRICS:
+        valid = [(history_numeric(row.get(key)), index) for index, row in enumerate(bucket)]
+        valid = [(value, index) for value, index in valid if value is not None]
+        if valid:
+            chosen.add(min(valid)[1])
+            chosen.add(max(valid)[1])
+    return [bucket[index] for index in sorted(chosen)]
+
+
+def summarize_history(sala_id: str, desde: datetime, hasta: datetime):
+    """
+    Nombre   : summarize_history
+    Razón    : Resumir el rango completo y reducir puntos sin unir huecos ni perder extremos.
+    Entradas : Sala autorizada y fechas UTC o con zona horaria.
+    Salida   : Conteo, estadísticas y ventanas originales para el gráfico.
+    Efectos  : Lectura mediante cursor de PostgreSQL; no modifica los datos.
+    """
+    stats = {key: {'key': key, 'count': 0, 'sum': 0.0, 'min': None, 'max': None} for key in HISTORY_METRICS}
+    seconds = max(300.0, (hasta - desde).total_seconds() / 240.0)
+    origin = desde.timestamp()
+    points, bucket = [], []
+    previous_time = None
+    previous_signature = None
+    previous_bucket = None
+    total = 0
+    with db() as conn, conn.cursor(name='resumen_historico') as cur:
+        cur.itersize = 500
+        cur.execute(HISTORY_METRICS_SQL, (sala_id, desde, hasta, sala_id, desde, hasta))
+        for result in cur:
+            row = result['data']
+            stamp = result['fecha'].timestamp()
+            gap = previous_time is not None and stamp - previous_time > 330
+            signature = (row.get('calidadHora'), tuple(history_numeric(row.get(key)) is not None for key in HISTORY_METRICS))
+            number = int((stamp - origin) // seconds)
+            if bucket and (gap or signature != previous_signature or number != previous_bucket):
+                points.extend(history_bucket_rows(bucket))
+                bucket = []
+            row['historiaReducida'] = True
+            row['huecoAntes'] = gap
+            bucket.append(row)
+            for key in HISTORY_METRICS:
+                value = history_numeric(row.get(key))
+                if value is None:
+                    continue
+                stat = stats[key]
+                stat['count'] += 1
+                stat['sum'] += value
+                stat['min'] = value if stat['min'] is None else min(stat['min'], value)
+                stat['max'] = value if stat['max'] is None else max(stat['max'], value)
+            previous_time, previous_signature, previous_bucket = stamp, signature, number
+            total += 1
+    if bucket:
+        points.extend(history_bucket_rows(bucket))
+    result = []
+    for stat in stats.values():
+        stat['avg'] = stat['sum'] / stat['count'] if stat['count'] else None
+        del stat['sum']
+        result.append(stat)
+    return {'total': total, 'stats': result, 'grafico': points}
+
+
+@app.get('/salas/{salaId}/historico/resumen')
+def history_summary(salaId: str, desde: datetime, hasta: datetime,
+                    user=Depends(allow_roles('ADMIN', 'ANALISTA'))):
+    """
+    Nombre   : history_summary
+    Razón    : Entregar estadísticas completas y puntos reducidos para Histórico.
+    Entradas : Sala, rango con zona horaria y usuario autenticado.
+    Salida   : Conteo, resumen y gráfico de la sala autorizada.
+    Efectos  : Solo lectura de PostgreSQL.
+    """
+    validate_history_range(desde, hasta)
+    ensure_room_access(user, salaId)
+    return summarize_history(salaId, desde, hasta)
+
+
+@app.get('/salas/{salaId}/historico/ventanas')
+def history_page(salaId: str, desde: datetime, hasta: datetime,
+                 pagina: int = Query(1, ge=1, le=42949672),
+                 user=Depends(allow_roles('ADMIN', 'ANALISTA'))):
+    """
+    Nombre   : history_page
+    Razón    : Cargar una página de ventanas completas sin transferir el rango entero.
+    Entradas : Sala, rango, número de página y usuario autenticado.
+    Salida   : Hasta 50 registros ordenados cronológicamente.
+    Efectos  : Solo lectura de PostgreSQL.
+    """
+    validate_history_range(desde, hasta)
+    ensure_room_access(user, salaId)
+    params = (salaId, desde, hasta, salaId, desde, hasta, 50, (pagina - 1) * 50, salaId)
+    return [row['data'] for row in fetch_all(HISTORY_PAGE_SQL, params)]
 
 
 def csv_safe_text(value: str) -> str:

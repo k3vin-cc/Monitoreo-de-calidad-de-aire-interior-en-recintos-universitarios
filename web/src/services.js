@@ -73,6 +73,10 @@ export const api = {
   state: (id,options={})=>request(`/salas/${encodeURIComponent(id)}/estado${query(options)}`),
   /** Nombre: stateComplements. Razón: solicita métricas y alertas después del estado actual. Entradas: identificador de sala. Salida: complementos permitidos por el servidor. Efectos: consulta la API. */
   stateComplements: id=>request(`/salas/${encodeURIComponent(id)}/estado/complementos`), telemetry:(id,params)=>request(`/salas/${encodeURIComponent(id)}/telemetria${query(params)}`), telemetryWithoutDate:id=>request(`/salas/${encodeURIComponent(id)}/telemetria-sin-fecha`),
+  /** Nombre: historySummary. Razón: obtener resumen completo y puntos reducidos. Entradas: sala y rango. Salida: conteo, estadísticas y gráfico. Efectos: consulta de solo lectura. */
+  historySummary:(id,params)=>request(`/salas/${encodeURIComponent(id)}/historico/resumen${query(params)}`),
+  /** Nombre: historyPage. Razón: cargar únicamente las ventanas de una página. Entradas: sala, rango y página. Salida: hasta 50 ventanas. Efectos: consulta de solo lectura. */
+  historyPage:(id,params)=>request(`/salas/${encodeURIComponent(id)}/historico/ventanas${query(params)}`),
   exportRoom:(id,format,params)=>request(`/salas/${encodeURIComponent(id)}/exportacion${query({formato:format,...params})}`,{responseType:'blob'}),
   alerts:params=>request('/alertas'+query(params)), nodes: (options={})=>request('/nodos'+query({incluirConteosHistorial:false,...options})), verifyNode:id=>request(`/nodos/${encodeURIComponent(id)}/verificar-presencia`,{method:'POST'}),
   /** Nombre: nodeRetirementSummary. Razón: obtiene el historial sólo al abrir el diálogo de retiro. Entradas: id del nodo seleccionado. Salida: conteos históricos del nodo. Efectos: ninguno; consulta la API. */
