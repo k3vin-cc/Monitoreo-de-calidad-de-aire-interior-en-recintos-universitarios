@@ -1414,7 +1414,7 @@ async def verify_same_origin_mutations(request: Request, call_next):
             "/historico/ventanas", "/exportacion"
         ))
     )
-    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento") or history_read:
+    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento") or history_read or path.startswith("/alertas"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -2495,6 +2495,45 @@ def export_room(salaId: str, formato: Literal["csv", "json"] = "csv", desde: dat
     if formato == "json":
         return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="application/json")
     return StreamingResponse(stream_room_export(salaId, formato, desde, hasta), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="telemetria-{salaId}.csv"'})
+
+
+@app.get("/alertas/pagina")
+def alerts_page(salaId: str | None = None, estado: Literal["activa", "resuelta"] | None = None,
+                variable: Literal["CO2", "PM2.5", "PM10", "Temperatura", "Humedad"] | None = None,
+                desde: datetime | None = None, hasta: datetime | None = None,
+                pagina: int = Query(1, ge=1, le=100000), user=Depends(allow_roles("ADMIN", "ANALISTA")),
+                _slot=Depends(history_query_slot)):
+    """
+    Nombre   : alerts_page
+    Razón    : Entrega una página acotada de alertas con ubicación y vigencia de la sala.
+    Entradas : Filtros, página y usuario autenticado.
+    Salida   : Hasta 50 alertas autorizadas y señal de página siguiente.
+    Efectos  : Solo lectura de PostgreSQL.
+    """
+    if desde and hasta and ((desde.tzinfo is None) != (hasta.tzinfo is None) or desde > hasta):
+        raise HTTPException(422, "Selecciona un rango de fechas válido")
+    allowed = allowed_buildings(user)
+    sql = '''SELECT a.id,a."salaId",a.variable,a."valorMedido",a.nivel,a.estado,
+        a."ventanaConfirmacion",a."timestamp",a."resueltaEn",s.nombre AS "salaNombre",
+        p.nombre AS "pisoNombre",ed.nombre AS "edificioNombre",sec.nombre AS "sectorNombre",
+        actual."nodoId" AS "nodoActualId",actual."ultimaTelemetria",actual."ventanaTimestamp"
+        FROM alertas a JOIN salas s ON s.id=a."salaId" JOIN pisos p ON p.id=s."pisoId"
+        JOIN edificios ed ON ed.id=p."edificioId" JOIN sectores sec ON sec.id=ed."sectorId"
+        LEFT JOIN LATERAL (SELECT v."nodoId",v."ultimaTelemetria",v."ventanaTimestamp"
+            FROM vw_estado_actual_salas v WHERE v."salaId"=s.id
+            ORDER BY v."ultimaTelemetria" DESC NULLS LAST,v."nodoId" LIMIT 1) actual ON TRUE
+        WHERE (%s::text IS NULL OR a."salaId"=%s::text) AND (%s::text IS NULL OR a.estado=%s::text)
+        AND (%s::text IS NULL OR a.variable=%s::text)
+        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion">=%s::timestamptz)
+        AND (%s::timestamptz IS NULL OR a."ventanaConfirmacion"<=%s::timestamptz)
+        AND (%s::text[] IS NULL OR p."edificioId"=ANY(%s::text[]))
+        ORDER BY a."ventanaConfirmacion" DESC,a.id DESC LIMIT 51 OFFSET %s'''
+    params = (salaId,salaId,estado,estado,variable,variable,desde,desde,hasta,hasta,allowed,allowed,(pagina-1)*50)
+    with db() as conn, conn.cursor() as cur:
+        set_history_statement_timeout(conn)
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return {"alertas": rows[:50], "hayMas": len(rows) > 50, "pagina": pagina}
 
 
 @app.get("/alertas")

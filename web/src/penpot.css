@@ -396,6 +396,26 @@
 .profilePasswordField .profileEye { position: absolute; right: 4px; width: 31px; height: 31px; padding: 0; color: #60798b; }
 .profilePasswordField .profileEye:hover { color: var(--deep); background: #edf5f8; }
 .profilePasswordMismatch { color: #a83131; font-size: 11px; }
+.alertSearch { margin-bottom: 18px; }
+.alertSearchGrid { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)); gap: 12px; align-items: start; }
+.alertSearchGrid label, .alertRoomSearch { display: flex; flex-direction: column; gap: 6px; color: #3d576b; font-size: 12px; font-weight: 600; }
+.alertSearchGrid input, .alertSearchGrid select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: #fff; color: var(--ink); }
+.alertRoomSearch { position: relative; }
+.alertRoomSearch small { color: var(--muted); font-weight: 400; }
+.alertRoomMatches { position: absolute; z-index: 5; top: 67px; left: 0; right: 0; max-height: 240px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.alertRoomMatches button { display: block; width: 100%; padding: 10px; border: 0; background: #fff; text-align: left; color: var(--ink); }
+.alertRoomMatches button:hover, .alertRoomMatches button:focus { background: #edf5f8; }
+.alertActions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 16px; }
+.alertList { display: grid; gap: 10px; }
+.alertItem { padding: 15px; border: 1px solid var(--line); border-radius: 10px; }
+.alertItemHead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.alertItemHead div { display: flex; flex-direction: column; gap: 4px; }
+.alertItemHead a { color: var(--deep); }
+.alertItemHead small, .alertDetails, .alertFreshness { color: var(--muted); font-size: 12px; }
+.alertDetails { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; }
+.alertFreshness { margin: 10px 0 0; }
+@media (max-width: 1050px) { .alertSearchGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.alertRoomSearch { grid-column: 1 / -1; } }
+@media (max-width: 480px) { .alertSearchGrid { grid-template-columns: 1fr; }.alertRoomSearch { grid-column: auto; }.alertDetails { flex-direction: column; } }
 .profileActions { display: flex; justify-content: flex-end; gap: 9px; }
 @media (max-width:760px) {
   .profileFormPanel .formGrid { grid-template-columns: 1fr; }
