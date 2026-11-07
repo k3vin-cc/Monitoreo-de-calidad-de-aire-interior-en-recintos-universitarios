@@ -65,6 +65,9 @@
 .loginInput { height: 50px; display: flex; align-items: center; gap: 12px; border: 1px solid #d8e3ec; border-radius: 8px; background: #fff; color: #7891a3; padding: 0 15px; margin-bottom: 21px; }
 .loginInput:focus-within { border-color: #007dbc; box-shadow: 0 0 0 3px #007dbc1c; }
 .loginInput input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; color: #22384b; background: transparent; }
+/* Evita que Edge muestre su ojo nativo junto al control personalizado de Login. */
+.loginInput input::-ms-reveal,
+.loginInput input::-ms-clear { display: none; }
 .loginInput button { border: 0; background: transparent; color: #7891a3; padding: 3px; display: flex; }
 .loginHint { margin: -5px 0 22px; font-size: 11px; color: #8296a5; }
 .loginSubmit { min-height: 51px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; border: 0; border-radius: 8px; color: #25394b; background: #fec601; font-size: 14px; font-weight: 800; }
