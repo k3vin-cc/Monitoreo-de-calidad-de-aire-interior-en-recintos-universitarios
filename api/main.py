@@ -2187,6 +2187,42 @@ def history_bucket_rows(bucket):
     return [bucket[index] for index in sorted(chosen)]
 
 
+
+def accumulate_history_stats(stats, row):
+    """
+    Nombre   : accumulate_history_stats
+    Razón    : Actualiza el resumen completo con los valores numéricos de una ventana.
+    Entradas : Acumuladores por variable y datos de una ventana de PostgreSQL.
+    Salida   : Ninguna; actualiza conteos, sumas y extremos en los acumuladores.
+    Efectos  : Modifica únicamente el diccionario recibido en memoria.
+    """
+    for key in HISTORY_METRICS:
+        value = history_numeric(row.get(key))
+        if value is None:
+            continue
+        stat = stats[key]
+        stat['count'] += 1
+        stat['sum'] += value
+        stat['min'] = value if stat['min'] is None else min(stat['min'], value)
+        stat['max'] = value if stat['max'] is None else max(stat['max'], value)
+
+
+def finish_history_stats(stats):
+    """
+    Nombre   : finish_history_stats
+    Razón    : Convertir acumuladores internos en estadísticas para la respuesta.
+    Entradas : Acumuladores por variable calculados del rango completo.
+    Salida   : Lista con conteo, promedio y extremos de cada variable.
+    Efectos  : Modifica los acumuladores en memoria; no persiste datos.
+    """
+    result = []
+    for stat in stats.values():
+        stat['avg'] = stat['sum'] / stat['count'] if stat['count'] else None
+        del stat['sum']
+        result.append(stat)
+    return result
+
+
 def summarize_history(sala_id: str, desde: datetime, hasta: datetime):
     """
     Nombre   : summarize_history
@@ -2218,25 +2254,12 @@ def summarize_history(sala_id: str, desde: datetime, hasta: datetime):
             row['historiaReducida'] = True
             row['huecoAntes'] = gap
             bucket.append(row)
-            for key in HISTORY_METRICS:
-                value = history_numeric(row.get(key))
-                if value is None:
-                    continue
-                stat = stats[key]
-                stat['count'] += 1
-                stat['sum'] += value
-                stat['min'] = value if stat['min'] is None else min(stat['min'], value)
-                stat['max'] = value if stat['max'] is None else max(stat['max'], value)
+            accumulate_history_stats(stats, row)
             previous_time, previous_signature, previous_bucket = stamp, signature, number
             total += 1
     if bucket:
         points.extend(history_bucket_rows(bucket))
-    result = []
-    for stat in stats.values():
-        stat['avg'] = stat['sum'] / stat['count'] if stat['count'] else None
-        del stat['sum']
-        result.append(stat)
-    return {'total': total, 'stats': result, 'grafico': points}
+    return {'total': total, 'stats': finish_history_stats(stats), 'grafico': points}
 
 
 @app.get('/salas/{salaId}/historico/resumen')
