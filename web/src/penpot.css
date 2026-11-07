@@ -132,7 +132,8 @@
 .historyPage .historyApplied p { margin:8px 0; }
 .historyPage .historyApplied small { display:block; margin-top:10px; color:#5f7889; }
 .historyPage .historyPages { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:13px; }
-.historyPage .historyToolbar { grid-template-columns:minmax(0,2fr) minmax(180px,1fr) auto; align-items:end; }
+.historyPage .historyToolbar { grid-template-columns:minmax(180px,1fr) auto; align-items:end; }
+.historyPage .historyToolbar > .historyRoomPicker { grid-column:1 / -1; }
 .historyPage .historyToolbar > button { margin-top:0; }
 .historyPage .historyLocation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
 .historyPage .historyRoomOptions { top:100%; }
