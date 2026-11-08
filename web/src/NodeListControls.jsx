@@ -5,13 +5,13 @@ import {nodeConnectionState} from './domain';
  * Entradas: nodos y filtros del usuario. Salida: coincidencias. Efectos: ninguno. */
 export function filterNodes(nodes,query,state,room){
  const text=query.trim().toLocaleLowerCase('es');
- return nodes.filter(n=>(!state||nodeConnectionState(n)===state)&&(!room||(room==='unassigned'?!n.salaId:n.salaId===room))&&[n.nombre,n.id,n.macAddress,n.salaNombre,n.edificioNombre,n.sectorNombre].filter(Boolean).join(' ').toLocaleLowerCase('es').includes(text));
+ return nodes.filter(n=>(!state||nodeConnectionState(n)===state)&&(!room||(room==='unassigned'?!n.salaId:n.salaId===room))&&[n.nombre,n.id,n.macAddress,n.salaNombre,n.edificioNombre,n.sectorNombre,n.firmware].filter(Boolean).join(' ').toLocaleLowerCase('es').includes(text));
 }
 
 /** Nombre: NodeListControls. Razón: compartir búsqueda y filtros entre las dos vistas de nodos.
  * Entradas: filtros y callbacks del componente padre. Salida: controles accesibles. Efectos: actualiza filtros. */
 export default function NodeListControls({query,state,room,onQuery,onState,onRoom,rooms}){
- return <div className="nodeFilters"><label>Buscar nodo<input type="search" value={query} onChange={e=>onQuery(e.target.value)} placeholder="Nombre, ID, MAC o ubicación"/></label><label>Estado de conexión<select value={state} onChange={e=>onState(e.target.value)}><option value="">Todos</option><option value="conectado">Conectado</option><option value="no_respondio">No respondió</option><option value="desconectado">Desconectado</option><option value="presencia_no_disponible">Presencia no disponible</option></select></label><label>Ubicación<select value={room} onChange={e=>onRoom(e.target.value)}><option value="">Todas las salas</option><option value="unassigned">Sin asignar</option>{rooms.map(r=><option key={r.id} value={r.id}>{[r.sectorNombre,r.edificioNombre,r.pisoNombre,r.nombre].filter(Boolean).join(' › ')}</option>)}</select></label></div>;
+ return <div className="nodeFilters"><label>Buscar nodo<input type="search" value={query} onChange={e=>onQuery(e.target.value)} placeholder="Nombre, ID, MAC, firmware o ubicación"/></label><label>Estado de conexión<select value={state} onChange={e=>onState(e.target.value)}><option value="">Todos</option><option value="conectado">Conectado</option><option value="no_respondio">No respondió</option><option value="desconectado">Desconectado</option><option value="presencia_no_disponible">Presencia no disponible</option></select></label><label>Ubicación<select value={room} onChange={e=>onRoom(e.target.value)}><option value="">Todas las salas</option><option value="unassigned">Sin asignar</option>{rooms.map(r=><option key={r.id} value={r.id}>{[r.sectorNombre,r.edificioNombre,r.pisoNombre,r.nombre].filter(Boolean).join(' › ')}</option>)}</select></label></div>;
 }
 
 /** Nombre: NodePages. Razón: limitar la cantidad de filas visibles. Entradas: página y total.

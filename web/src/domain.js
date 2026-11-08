@@ -19,6 +19,23 @@ export function formatDate(value, options={}) {
   if (!value) return 'Sin ventana verificable';
   const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat('es-CL', options).format(date);
 }
+
+/** Nombre: formatRelativeDate. Razón: hacer legible la antigüedad de señales y telemetría.
+ * Entradas: fecha ISO del servidor y hora actual opcional. Salida: tiempo relativo en español.
+ * Efectos: ninguno. */
+export function formatRelativeDate(value, now=Date.now()) {
+  if (!value) return 'Sin registro';
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Sin registro';
+  const seconds = Math.round((timestamp - now) / 1000);
+  const absolute = Math.abs(seconds);
+  const [unit, divisor] = absolute < 60 ? ['second', 1]
+    : absolute < 3600 ? ['minute', 60]
+    : absolute < 86400 ? ['hour', 3600]
+    : ['day', 86400];
+  const amount = Math.round(seconds / divisor);
+  return new Intl.RelativeTimeFormat('es', {numeric:'auto'}).format(amount, unit);
+}
 export function number(value, digits=1) { return value == null ? '—' : new Intl.NumberFormat('es-CL',{maximumFractionDigits:digits}).format(value); }
 export const canAnalyze = user => ['ADMIN','ANALISTA'].includes(user?.rol);
 export const canAdmin = user => user?.rol === 'ADMIN';

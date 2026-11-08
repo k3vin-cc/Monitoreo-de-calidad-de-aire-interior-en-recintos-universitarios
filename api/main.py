@@ -2739,7 +2739,7 @@ def nodes(incluirConteosHistorial: bool = True, user=Depends(allow_roles("ADMIN"
                 UNION ALL SELECT "salaId","recibidoEn" FROM telemetria_tiempo_incierto WHERE "nodoId"=n.id
                 UNION ALL SELECT "salaId","timestamp" FROM alertas WHERE "nodoId"=n.id
             ) contexto ORDER BY contexto.fecha DESC LIMIT 1
-        ) ultima ON TRUE
+        ) ultima ON n."salaId" IS NULL
         LEFT JOIN salas r ON r.id=COALESCE(n."salaId",ultima."salaId") LEFT JOIN pisos p ON p.id=r."pisoId"
         LEFT JOIN edificios ed ON ed.id=p."edificioId" LEFT JOIN sectores sec ON sec.id=ed."sectorId"
         LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM telemetria WHERE %s AND "nodoId"=n.id) t ON TRUE
