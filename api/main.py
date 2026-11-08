@@ -14,6 +14,7 @@ import re
 import secrets
 import threading
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import asynccontextmanager
@@ -186,9 +187,9 @@ class UserPatch(BaseModel):
 
 class TelegramPreferencesIn(BaseModel):
     avisosActivos: StrictBool = False
-    salas: list[StrictStr] = Field(default_factory=list)
+    salas: list[StrictStr] = Field(default_factory=list, max_length=1000)
     exportacion: StrictBool = False
-    salasBase: list[StrictStr] | None = None
+    salasBase: list[StrictStr] | None = Field(default=None, max_length=1000)
     avisosBase: StrictBool | None = None
 
 
@@ -656,8 +657,12 @@ def provision_mqtt_client(node_id: str, password: str, force_update: bool = Fals
                              "roles": [{"rolename": role_name, "priority": 1}]})
 
 
-def telegram_api(method: str, fields: dict[str, Any], file: tuple[str, bytes, str] | None = None):
-    """Call the Telegram Bot API without logging the token or message contents."""
+def telegram_api(method: str, fields: dict[str, Any], file: tuple[str, bytes, str] | None = None,
+                 timeout: float = 35):
+    """Nombre: telegram_api. Razón: llamar la Bot API sin registrar el token ni el contenido.
+    Entradas: método, campos y archivo opcional; timeout limita la espera de red.
+    Salida: resultado del método o None si el bot no está configurado. Efectos: petición HTTPS.
+    """
     if not TELEGRAM_BOT_TOKEN:
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
@@ -672,11 +677,26 @@ def telegram_api(method: str, fields: dict[str, Any], file: tuple[str, bytes, st
         pieces.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n".encode() + content + b"\r\n")
         pieces.append(f"--{boundary}--\r\n".encode())
         request = urllib.request.Request(url, data=b"".join(pieces), headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}, method="POST")
-    with urllib.request.urlopen(request, timeout=35) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         result = json.loads(response.read())
     if not result.get("ok"):
         raise RuntimeError("Telegram rechazó la operación")
     return result.get("result")
+
+
+def telegram_bot_username() -> str | None:
+    """Nombre: telegram_bot_username. Razón: generar un enlace directo solo con identidad confirmada.
+    Entradas: token configurado en el servidor. Salida: nombre público verificado o None.
+    Efectos: consulta getMe con espera máxima breve; no registra el token ni el resultado.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return None
+    try:
+        bot = telegram_api("getMe", {}, timeout=4)
+    except (OSError, TimeoutError, RuntimeError, ValueError, urllib.error.URLError):
+        return None
+    username = (bot or {}).get("username")
+    return username if isinstance(username, str) and re.fullmatch(r"[A-Za-z0-9_]{5,32}", username) else None
 
 
 def telegram_user_for_chat(chat_id: int):
@@ -701,6 +721,8 @@ except ZoneInfoNotFoundError:
 
 TELEGRAM_PAGE_SIZE = 7
 telegram_search_modes: dict[int, str] = {}
+telegram_test_sent_at: dict[str, datetime] = {}
+telegram_test_sent_lock = threading.Lock()
 TELEGRAM_LEVELS = {"s": "Sectores", "b": "Edificios", "f": "Pisos", "r": "Salas"}
 TELEGRAM_SEVERITY = {0: "Óptimo", 1: "Precaución", 2: "Deficiente", 3: "Malo", 4: "Crítico"}
 TELEGRAM_VARIABLES = {
@@ -947,16 +969,38 @@ async def telegram_show_preference_room(chat_id: int, user: dict[str, Any], room
     await telegram_send(chat_id, f"🔔 {telegram_location(room)}\nEstado de la suscripción: {status}.", buttons)
 
 
-def telegram_toggle_subscription(user: dict[str, Any], room_id: str) -> bool:
-    if not any(room["salaId"] == room_id for room in telegram_authorized_rooms(user)):
+def telegram_toggle_subscription(user: dict[str, Any], room_id: str, chat_id: int) -> bool:
+    try:
+        ensure_room_access(user, room_id)
+    except HTTPException:
         return False
     with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT 1 FROM telegram_vinculos WHERE "usuarioId"=%s AND "chatId"=%s
+            AND "chatVinculado"=TRUE FOR UPDATE''', (user["id"], chat_id))
+        if not cur.fetchone():
+            return False
         cur.execute('SELECT 1 FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND "salaId"=%s', (user["id"], room_id))
         if cur.fetchone():
             cur.execute('DELETE FROM telegram_preferencias_salas WHERE "usuarioId"=%s AND "salaId"=%s', (user["id"], room_id))
         else:
             cur.execute('INSERT INTO telegram_preferencias_salas ("usuarioId","salaId") VALUES (%s,%s) ON CONFLICT DO NOTHING', (user["id"], room_id))
     return True
+
+
+def telegram_update_room_pause(user_id: str, room_id: str, chat_id: int, hours: int) -> bool:
+    """Nombre: telegram_update_room_pause. Razón: serializar pausas del bot con cambios hechos en la web.
+    Entradas: usuario, chat vinculado, sala y duración permitida. Salida: True si se actualizó una suscripción existente.
+    Efectos: bloquea el vínculo del usuario y actualiza pausadoHasta en la preferencia de esa sala.
+    """
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT 1 FROM telegram_vinculos WHERE "usuarioId"=%s AND "chatId"=%s
+            AND "chatVinculado"=TRUE FOR UPDATE''', (user_id, chat_id))
+        if not cur.fetchone():
+            return False
+        cur.execute('''UPDATE telegram_preferencias_salas SET "pausadoHasta"=CASE WHEN %s=0 THEN NULL
+            ELSE NOW()+(%s * INTERVAL '1 hour') END WHERE "usuarioId"=%s AND "salaId"=%s''',
+            (hours, hours, user_id, room_id))
+        return cur.rowcount == 1
 
 
 async def telegram_show_pause_options(chat_id: int, user: dict[str, Any], room_id: str):
@@ -1016,7 +1060,7 @@ async def telegram_handle_callback(callback: dict[str, Any]):
         execute('UPDATE telegram_vinculos SET "avisosActivos"=NOT "avisosActivos","updatedAt"=NOW() WHERE "usuarioId"=%s AND "chatId"=%s AND "chatVinculado"=TRUE', (user["id"], chat_id))
         await telegram_show_preferences(chat_id, telegram_user_for_chat(chat_id))
     elif action == "t" and len(parts) == 2:
-        if telegram_toggle_subscription(user, parts[1]):
+        if telegram_toggle_subscription(user, parts[1], chat_id):
             await telegram_show_preference_room(chat_id, user, parts[1])
         else:
             await telegram_send(chat_id, "Ya no tienes permiso para configurar esa sala.")
@@ -1030,10 +1074,14 @@ async def telegram_handle_callback(callback: dict[str, Any]):
             await telegram_send(chat_id, "Ya no tienes permiso para configurar esa sala.")
             return
         if action == "u" and len(parts) == 3 and parts[2] in ("1", "24"):
-            execute('UPDATE telegram_preferencias_salas SET "pausadoHasta"=NOW()+(%s * INTERVAL \'1 hour\') WHERE "usuarioId"=%s AND "salaId"=%s',
-                    (int(parts[2]), user["id"], room_id))
+            updated = telegram_update_room_pause(user["id"], room_id, chat_id, int(parts[2]))
         elif action == "r" and len(parts) == 2:
-            execute('UPDATE telegram_preferencias_salas SET "pausadoHasta"=NULL WHERE "usuarioId"=%s AND "salaId"=%s', (user["id"], room_id))
+            updated = telegram_update_room_pause(user["id"], room_id, chat_id, 0)
+        else:
+            updated = False
+        if not updated:
+            await telegram_send(chat_id, "La suscripción cambió. Abre Mis avisos y vuelve a intentarlo.")
+            return
         await telegram_show_preference_room(chat_id, user, room_id)
     else:
         await telegram_send(chat_id, "Esa opción ya no está disponible. Abre el menú para elegir de nuevo.", [[("Menú", "m")]])
@@ -1069,11 +1117,16 @@ async def telegram_handle_update(update: dict[str, Any]):
     if command == "/start":
         parts = text.split(maxsplit=1)
         if len(parts) == 2:
-            result = fetch_one('''UPDATE telegram_vinculos SET "chatId"=%s,"telegramUsername"=%s,
+            try:
+                result = fetch_one('''UPDATE telegram_vinculos AS target SET "chatId"=%s,"telegramUsername"=%s,
                 "chatVinculado"=TRUE,"avisosActivos"=FALSE,"codigoTemporal"=NULL,"codigoExpiraEn"=NULL,
                 "vinculadoEn"=NOW(),"updatedAt"=NOW() WHERE "codigoTemporal"=%s AND "codigoExpiraEn">NOW()
-                AND EXISTS (SELECT 1 FROM usuarios u WHERE u.id="usuarioId" AND u.estado='activo' AND u.rol<>'GUEST')
-                RETURNING "usuarioId"''', (chat_id,(message.get("from") or {}).get("username"),parts[1]))
+                AND EXISTS (SELECT 1 FROM usuarios u WHERE u.id=target."usuarioId" AND u.estado='activo' AND u.rol<>'GUEST')
+                AND NOT EXISTS (SELECT 1 FROM telegram_vinculos other_link
+                    WHERE other_link."chatId"=%s AND other_link."usuarioId"<>target."usuarioId")
+                RETURNING "usuarioId"''', (chat_id,(message.get("from") or {}).get("username"),parts[1],chat_id))
+            except psycopg.errors.UniqueViolation:
+                result = None
             if result:
                 await telegram_send(chat_id, "Cuenta vinculada. Puedes consultar tus salas ahora; los avisos quedan desactivados hasta que los actives en Mis avisos.")
                 await telegram_show_menu(chat_id, telegram_user_for_chat(chat_id))
@@ -1400,7 +1453,7 @@ async def verify_same_origin_mutations(request: Request, call_next):
     Razón    : Rechaza escrituras iniciadas desde otro origen para reducir CSRF.
     Entradas : Petición HTTP y respuesta producida por FastAPI.
     Salida   : Respuesta normal o rechazo 403 por origen inválido.
-    Efectos  : Añade no-store a respuestas de autenticación, aprovisionamiento e Histórico.
+    Efectos  : Añade no-store a respuestas de autenticación, aprovisionamiento, Histórico y Telegram.
     """
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         source = request.headers.get("origin") or request.headers.get("referer", "")
@@ -1417,7 +1470,7 @@ async def verify_same_origin_mutations(request: Request, call_next):
             "/historico/ventanas", "/exportacion"
         ))
     )
-    if request.url.path.startswith("/auth/") or request.url.path.endswith("/aprovisionamiento") or history_read or path.startswith("/alertas"):
+    if request.url.path.startswith(("/auth/", "/telegram/")) or request.url.path.endswith("/aprovisionamiento") or history_read or path.startswith("/alertas"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -1500,6 +1553,26 @@ def ensure_room_access(user, sala_id: str):
     allowed = allowed_buildings(user)
     if allowed is not None and row["edificioId"] not in allowed:
         raise HTTPException(403, "Sala fuera de su ámbito autorizado")
+
+
+def ensure_telegram_rooms_access(user, room_ids: list[str]) -> list[str]:
+    """Nombre: ensure_telegram_rooms_access. Razón: validar una selección de salas con una lectura SQL.
+    Entradas: usuario autenticado y hasta 1000 identificadores recibidos por Telegram.
+    Salida: IDs únicos autorizados. Efectos: consulta salas y edificios; no modifica datos.
+    """
+    room_ids = list(dict.fromkeys(room_ids))
+    if not room_ids:
+        return []
+    rows = fetch_all('''SELECT s.id,ed.id AS "edificioId" FROM salas s
+        JOIN pisos p ON p.id=s."pisoId" JOIN edificios ed ON ed.id=p."edificioId"
+        WHERE s.id=ANY(%s::text[])''', (room_ids,))
+    found = {row["id"] for row in rows}
+    if found != set(room_ids):
+        raise HTTPException(404, "Una o más salas no existen")
+    allowed = allowed_buildings(user)
+    if allowed is not None and any(row["edificioId"] not in allowed for row in rows):
+        raise HTTPException(403, "Una o más salas están fuera de su ámbito autorizado")
+    return room_ids
 
 
 def jsonable(row):
@@ -3072,16 +3145,30 @@ def delete_user(usuarioId: str, user=Depends(allow_roles("ADMIN"))):
 
 @app.post("/telegram/vinculo")
 def telegram_link(response: Response, user=Depends(current_user)):
+    """Nombre: telegram_link. Razón: crear un código temporal sin alterar una cuenta ya vinculada.
+    Entradas: sesión autenticada. Salida: código, vencimiento y enlace directo si Telegram confirma el bot.
+    Efectos: actualiza solo el código temporal; serializa solicitudes simultáneas del mismo usuario.
+    """
     response.headers["Cache-Control"] = "no-store"
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado es de solo lectura")
-    recent=fetch_one('SELECT 1 FROM telegram_vinculos WHERE "usuarioId"=%s AND "codigoExpiraEn">%s', (user["id"],datetime.now(timezone.utc)+timedelta(minutes=9,seconds=30)))
-    if recent:
-        raise HTTPException(429, "Espera 30 segundos antes de generar otro código")
     code=secrets.token_urlsafe(9)[:12]
-    execute('''INSERT INTO telegram_vinculos ("usuarioId","codigoTemporal","codigoExpiraEn","chatVinculado","avisosActivos","updatedAt")
-        VALUES (%s,%s,NOW()+INTERVAL '10 minutes',FALSE,FALSE,NOW()) ON CONFLICT ("usuarioId") DO UPDATE SET
-        "codigoTemporal"=EXCLUDED."codigoTemporal","codigoExpiraEn"=EXCLUDED."codigoExpiraEn","chatVinculado"=FALSE,"avisosActivos"=FALSE,"updatedAt"=NOW()''',(user["id"],code))
-    return {"codigo":code,"expiraEn":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),"botActivo":bool(os.getenv("TELEGRAM_BOT_TOKEN"))}
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('INSERT INTO telegram_vinculos ("usuarioId") VALUES (%s) ON CONFLICT DO NOTHING', (user["id"],))
+        cur.execute('''SELECT "chatVinculado","codigoExpiraEn" FROM telegram_vinculos
+            WHERE "usuarioId"=%s FOR UPDATE''', (user["id"],))
+        current = cur.fetchone()
+        if current["chatVinculado"]:
+            raise HTTPException(409, "Ya tienes una cuenta de Telegram vinculada. Desvincúlala antes de reemplazarla.")
+        if current["codigoExpiraEn"] and current["codigoExpiraEn"] > datetime.now(timezone.utc) + timedelta(minutes=9, seconds=30):
+            raise HTTPException(429, "Espera 30 segundos antes de generar otro código")
+        cur.execute('''UPDATE telegram_vinculos SET "codigoTemporal"=%s,
+            "codigoExpiraEn"=NOW()+INTERVAL '10 minutes',"updatedAt"=NOW()
+            WHERE "usuarioId"=%s RETURNING "codigoExpiraEn"''', (code, user["id"]))
+        expires = cur.fetchone()["codigoExpiraEn"]
+    bot_username = telegram_bot_username()
+    telegram_url = f"https://t.me/{bot_username}?start={code}" if bot_username else None
+    return {"codigo":code,"expiraEn":expires.isoformat(),"botActivo":bool(bot_username),
+            "botUsername":bot_username,"telegramUrl":telegram_url}
 
 
 @app.get("/telegram/preferencias")
@@ -3100,11 +3187,10 @@ def get_telegram_preferences(user=Depends(current_user)):
 @app.put("/telegram/preferencias")
 def put_telegram_preferences(body: TelegramPreferencesIn, user=Depends(current_user)):
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado es de solo lectura")
-    rooms=list(dict.fromkeys(body.salas))
-    if not isinstance(rooms,list) or not all(isinstance(room,str) for room in rooms): raise HTTPException(422,"salas debe ser una lista de IDs")
-    for room in rooms: ensure_room_access(user,room)
+    rooms=ensure_telegram_rooms_access(user, body.salas)
     if user["rol"] not in ("ADMIN","ANALISTA") and body.exportacion: raise HTTPException(403,"Exportación requiere rol ADMIN o ANALISTA")
     with db() as conn, conn.cursor() as cur:
+        cur.execute('INSERT INTO telegram_vinculos ("usuarioId") VALUES (%s) ON CONFLICT DO NOTHING', (user["id"],))
         cur.execute('SELECT "avisosActivos" FROM telegram_vinculos WHERE "usuarioId"=%s FOR UPDATE',(user["id"],))
         current=cur.fetchone()
         if current and body.avisosBase is not None and current["avisosActivos"] != body.avisosBase:
@@ -3133,11 +3219,46 @@ def telegram_pause(body: TelegramPauseIn, user=Depends(current_user)):
     Entradas: salas autorizadas y horas. Salida: preferencias. Efectos: actualiza pausadoHasta.
     """
     if user["rol"] == "GUEST": raise HTTPException(403,"Acceso de invitado no permitido")
-    for room in set(body.salas): ensure_room_access(user,room)
-    execute('''UPDATE telegram_preferencias_salas SET "pausadoHasta"=CASE WHEN %s=0 THEN NULL
-        ELSE NOW()+(%s * INTERVAL '1 hour') END WHERE "usuarioId"=%s AND "salaId"=ANY(%s::text[])''',
-        (body.horas,body.horas,user["id"],list(set(body.salas))))
+    rooms=ensure_telegram_rooms_access(user, body.salas)
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('SELECT 1 FROM telegram_vinculos WHERE "usuarioId"=%s FOR UPDATE', (user["id"],))
+        if not cur.fetchone():
+            raise HTTPException(409, "La configuración de Telegram cambió. Recarga la página e inténtalo de nuevo.")
+        cur.execute('''UPDATE telegram_preferencias_salas SET "pausadoHasta"=CASE WHEN %s=0 THEN NULL
+            ELSE NOW()+(%s * INTERVAL '1 hour') END WHERE "usuarioId"=%s AND "salaId"=ANY(%s::text[])''',
+            (body.horas,body.horas,user["id"],rooms))
     return get_telegram_preferences(user)
+
+
+@app.post("/telegram/prueba")
+def telegram_test_message(user=Depends(current_user)):
+    """Nombre: telegram_test_message. Razón: permitir al usuario comprobar su vínculo bajo demanda.
+    Entradas: sesión autenticada. Salida: confirmación de envío o error apto para la interfaz.
+    Efectos: envía un único mensaje genérico al chat vinculado; limita intentos a uno cada 30 segundos.
+    """
+    if user["rol"] == "GUEST":
+        raise HTTPException(403, "El acceso de invitado no permite enviar pruebas")
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(503, "El bot de Telegram no está configurado")
+    link = fetch_one('''SELECT "chatId" FROM telegram_vinculos
+        WHERE "usuarioId"=%s AND "chatVinculado"=TRUE AND "chatId">0''', (user["id"],))
+    if not link:
+        raise HTTPException(409, "Vincula una cuenta de Telegram antes de enviar una prueba")
+    now = datetime.now(timezone.utc)
+    with telegram_test_sent_lock:
+        for key, sent in list(telegram_test_sent_at.items()):
+            if now - sent >= timedelta(minutes=30):
+                telegram_test_sent_at.pop(key, None)
+        last_sent = telegram_test_sent_at.get(user["id"])
+        if last_sent and now - last_sent < timedelta(seconds=30):
+            raise HTTPException(429, "Espera 30 segundos antes de enviar otra prueba")
+        telegram_test_sent_at[user["id"]] = now
+    try:
+        telegram_api("sendMessage", {"chat_id":link["chatId"],
+            "text":"Mensaje de prueba de AIRA. El vínculo con Telegram funciona."}, timeout=8)
+    except (OSError, TimeoutError, RuntimeError, urllib.error.URLError):
+        raise HTTPException(502, "Telegram no pudo confirmar el envío. Inténtalo más tarde.")
+    return {"enviado":True}
 
 
 @app.get("/telegram/envios")
