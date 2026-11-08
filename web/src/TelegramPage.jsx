@@ -38,12 +38,10 @@ export default function TelegramPage() {
     { id: room.sectorId, nombre: room.sectorNombre }])).values()], [rooms]);
   const buildings = useMemo(() => [...new Map(rooms
     .filter(room => !sector || room.sectorId === sector)
-    .map(room => [room.edificioId, { id: room.edificioId,
-      nombre: [room.sectorNombre, room.edificioNombre].filter(Boolean).join(' › ') }])).values()], [rooms, sector]);
+    .map(room => [room.edificioId, { id: room.edificioId, nombre: room.edificioNombre }])).values()], [rooms, sector]);
   const floors = useMemo(() => [...new Map(rooms
     .filter(room => (!sector || room.sectorId === sector) && (!building || room.edificioId === building))
-    .map(room => [room.pisoId, { id: room.pisoId,
-      nombre: [room.edificioNombre, room.pisoNombre].filter(Boolean).join(' › ') }])).values()], [rooms, sector, building]);
+    .map(room => [room.pisoId, { id: room.pisoId, nombre: room.pisoNombre }])).values()], [rooms, sector, building]);
   const dirty = Boolean(prefs && (enabled !== Boolean(prefs.vinculo?.avisosActivos)
     || [...selected].sort().join('|') !== [...prefs.salas].sort().join('|')));
   const linked = Boolean(prefs?.vinculo?.chatVinculado);
