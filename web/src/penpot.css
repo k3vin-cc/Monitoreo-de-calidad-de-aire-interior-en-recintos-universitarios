@@ -180,7 +180,7 @@
 .telegramPage .telegramBulk[open] summary { margin-bottom:12px; }
 .telegramPage .telegramBulk p,.telegramPage .stack > p { margin:0 0 8px; font-size:13px; }
 .telegramPage .telegramBulk .inlineActions { margin-bottom:12px; }
-.telegramPage .telegramRooms { display:grid; }
+.telegramPage .telegramRooms { display:grid; align-content:start; min-height:120px; }
 .telegramPage .telegramRoomRow { display:flex; align-items:flex-start; gap:14px; border-bottom:1px solid #e4edf2; padding:12px 0; }
 .telegramPage .telegramRoomRow > label { flex:1; display:flex; flex-direction:row; align-items:flex-start; gap:12px; border:0; padding:0; min-width:0; }
 .telegramPage .telegramRoomRow small { display:block; font-size:12px; color:#5f7889; margin-top:4px; line-height:1.5; }

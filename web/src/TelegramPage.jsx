@@ -8,6 +8,8 @@ import { api } from './services';
 export default function TelegramPage() {
   const [prefs, setPrefs] = useState(null);
   const [rooms, setRooms] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+  const [roomsError, setRoomsError] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [selected, setSelected] = useState([]);
   const [code, setCode] = useState(null);
@@ -29,6 +31,7 @@ export default function TelegramPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const lock = useRef(false);
   const revision = useRef(0);
+  const roomsRevision = useRef(0);
   const historyRevision = useRef(0);
   const refreshLinkRef = useRef(null);
 
@@ -69,24 +72,44 @@ export default function TelegramPage() {
   }, [pageRooms]);
   const activeCode = Boolean(code && !codeExpired);
 
-  /** Nombre: load. Razón: cargar la configuración y salas permitidas en paralelo.
-   * Entradas: ninguna. Salida: preferencias y lista autorizada. Efectos: dos consultas de solo lectura.
+  /** Nombre: loadRooms. Razón: consultar las salas sin retrasar la presentación de las preferencias.
+   * Entradas: ninguna; la sesión delimita las salas. Salida: lista autorizada o error visible.
+   * Efectos: consulta de solo lectura y actualización de la lista local.
+   */
+  async function loadRooms() {
+    const version = ++roomsRevision.current;
+    setRoomsLoading(true);
+    setRoomsError('');
+    setRooms([]);
+    try {
+      const availableRooms = await api.rooms({});
+      if (version === roomsRevision.current) setRooms(availableRooms);
+    } catch (loadError) {
+      if (version === roomsRevision.current) setRoomsError(loadError.message);
+    } finally {
+      if (version === roomsRevision.current) setRoomsLoading(false);
+    }
+  }
+
+  /** Nombre: load. Razón: mostrar las preferencias sin esperar la lista de salas.
+   * Entradas: ninguna. Salida: configuración personal y carga independiente de salas.
+   * Efectos: dos consultas de solo lectura; reemplaza la edición local al recargar.
    */
   async function load() {
     if (lock.current) return;
     const version = ++revision.current;
+    loadRooms();
     try {
-      const [preferences, availableRooms] = await Promise.all([api.telegramPrefs(), api.rooms({})]);
+      const preferences = await api.telegramPrefs();
       if (version !== revision.current) return;
       setConflict(false);
       setReloadConfirm(false);
       setPrefs(preferences);
-      setRooms(availableRooms);
       setEnabled(Boolean(preferences.vinculo?.avisosActivos));
       setSelected(preferences.salas);
       setError('');
     } catch (loadError) {
-      setError(loadError.message);
+      if (version === revision.current) setError(loadError.message);
     }
   }
 
@@ -320,7 +343,7 @@ export default function TelegramPage() {
       </div>}
       {message && <div className="notice success" role="status">{message}</div>}
 
-      {!prefs ? <p>Cargando configuración…</p> : (
+      {!prefs ? (!error && <p>Cargando configuración…</p>) : (
         <div className="telegramGrid">
           <section className="panel telegramAccountPanel">
             <div className="telegramPanelHeading">
@@ -414,26 +437,26 @@ export default function TelegramPage() {
 
               <div className="telegramFilters">
                 <label>Buscar sala, edificio o sector
-                  <input type="search" value={query} onChange={event => {
+                  <input type="search" value={query} disabled={roomsLoading || Boolean(roomsError)} onChange={event => {
                     setQuery(event.target.value); setPage(1);
                   }} placeholder="Escribe un nombre…" />
                 </label>
                 <label>Sector
-                  <select value={sector} onChange={event => {
+                  <select value={sector} disabled={roomsLoading || Boolean(roomsError)} onChange={event => {
                     setSector(event.target.value); setBuilding(''); setFloor(''); setPage(1);
                   }}><option value="">Todos los sectores</option>
                     {sectors.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
                   </select>
                 </label>
                 <label>Edificio
-                  <select value={building} onChange={event => {
+                  <select value={building} disabled={roomsLoading || Boolean(roomsError)} onChange={event => {
                     setBuilding(event.target.value); setFloor(''); setPage(1);
                   }}><option value="">Todos los edificios</option>
                     {buildings.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
                   </select>
                 </label>
                 <label>Piso
-                  <select value={floor} onChange={event => {
+                  <select value={floor} disabled={roomsLoading || Boolean(roomsError)} onChange={event => {
                     setFloor(event.target.value); setPage(1);
                   }}><option value="">Todos los pisos</option>
                     {floors.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
@@ -442,15 +465,15 @@ export default function TelegramPage() {
               </div>
 
               <label className="checkRow telegramSavedFilter">
-                <input type="checkbox" checked={savedOnly} onChange={event => {
+                <input type="checkbox" checked={savedOnly} disabled={roomsLoading || Boolean(roomsError)} onChange={event => {
                   setSavedOnly(event.target.checked); setPage(1);
                 }} />Mostrar solo salas suscritas
               </label>
 
               <div className="telegramSelectionBar">
-                <span>{matches.length} salas encontradas · página {currentPage} de {pages}</span>
+                <span>{roomsLoading ? 'Cargando salas…' : `${matches.length} salas encontradas · página ${currentPage} de ${pages}`}</span>
                 <div className="inlineActions">
-                  <button type="button" disabled={!pageRooms.length || Boolean(pending)}
+                  <button type="button" disabled={roomsLoading || Boolean(roomsError) || !pageRooms.length || Boolean(pending)}
                     onClick={() => changeGroup(pageRooms, !pageSelected)}>
                     {pageSelected ? 'Quitar selección de página' : 'Seleccionar página'}
                   </button>
@@ -458,11 +481,11 @@ export default function TelegramPage() {
                     onClick={() => changeGroup(matches, !matchedSelected)}>
                     {matchedSelected ? 'Quitar selección encontrada' : `Seleccionar ${matches.length} encontradas`}
                   </button>}
-                  <button type="button" disabled={!savedIds.size || Boolean(pending) || dirty}
+                  <button type="button" disabled={roomsLoading || Boolean(roomsError) || !savedIds.size || Boolean(pending) || dirty}
                     onClick={() => pauseRooms(matches.map(room => room.id), 1)}>Pausar guardadas 1 h</button>
-                  <button type="button" disabled={!savedIds.size || Boolean(pending) || dirty}
+                  <button type="button" disabled={roomsLoading || Boolean(roomsError) || !savedIds.size || Boolean(pending) || dirty}
                     onClick={() => pauseRooms(matches.map(room => room.id), 24)}>Pausar guardadas 24 h</button>
-                  <button type="button" disabled={!savedIds.size || Boolean(pending) || dirty}
+                  <button type="button" disabled={roomsLoading || Boolean(roomsError) || !savedIds.size || Boolean(pending) || dirty}
                     onClick={() => pauseRooms(matches.map(room => room.id), 0)}>Reanudar guardadas</button>
                 </div>
               </div>
@@ -473,6 +496,11 @@ export default function TelegramPage() {
               </p>}
 
               <div className="telegramRooms">
+                {roomsLoading && <p className="telegramEmpty" role="status">Cargando salas disponibles…</p>}
+                {roomsError && <div className="notice error" role="alert">
+                  No se pudieron cargar las salas: {roomsError}
+                  <button type="button" onClick={loadRooms}>Reintentar salas</button>
+                </div>}
                 {pageGroups.map(([groupId, group]) => {
                   const allGroupMatches = matches.filter(room => room.edificioId === groupId);
                   const allSelected = allGroupMatches.length > 0
@@ -524,7 +552,7 @@ export default function TelegramPage() {
                   </section>;
                 })}
               </div>
-              {!matches.length && <p className="telegramEmpty">No hay salas que coincidan con esos filtros.</p>}
+              {!roomsLoading && !roomsError && !matches.length && <p className="telegramEmpty">No hay salas que coincidan con esos filtros.</p>}
               {pages > 1 && <div className="inlineActions telegramPagination">
                 <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Anterior</button>
                 <span>{currentPage} de {pages}</span>
@@ -550,7 +578,7 @@ export default function TelegramPage() {
                     setSelected(prefs.salas);
                     setEnabled(Boolean(prefs.vinculo?.avisosActivos));
                   }}>Cancelar cambios</button>}
-                <button className="primary" disabled={Boolean(pending) || !dirty || conflict || selected.length > 1000}>
+                <button className="primary" disabled={roomsLoading || Boolean(roomsError) || Boolean(pending) || !dirty || conflict || selected.length > 1000}>
                   {pending === 'save' ? 'Guardando…' : 'Guardar cambios'}
                 </button>
               </div>
