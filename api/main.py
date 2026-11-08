@@ -3173,13 +3173,21 @@ def telegram_link(response: Response, user=Depends(current_user)):
 
 @app.get("/telegram/preferencias")
 def get_telegram_preferences(user=Depends(current_user)):
+    """Nombre: get_telegram_preferences. Razón: consultar el vínculo y las salas autorizadas del usuario.
+    Entradas: usuario autenticado y sus edificios asignados. Salida: vínculo, salas y pausas activas.
+    Efectos: dos lecturas de PostgreSQL en la misma conexión; no modifica la configuración.
+    """
     if user["rol"] == "GUEST": raise HTTPException(403, "El acceso de invitado no tiene preferencias personales")
-    link=fetch_one('SELECT "chatVinculado","avisosActivos","telegramUsername","vinculadoEn",right("chatId"::text,4) AS "cuentaReferencia" FROM telegram_vinculos WHERE "usuarioId"=%s',(user["id"],))
-    rooms=fetch_all('''SELECT pref."salaId",pref."pausadoHasta" FROM telegram_preferencias_salas pref
-        JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
-        JOIN edificios ed ON ed.id=p."edificioId"
-        WHERE pref."usuarioId"=%s AND s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL
-        AND ed."retiradoEn" IS NULL AND (%s OR ed.id=ANY(%s::text[])) ORDER BY pref."salaId"''', (user["id"],user["rol"]=="ADMIN",user.get("assignedEdificios") or []))
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "chatVinculado","avisosActivos","telegramUsername","vinculadoEn",right("chatId"::text,4) AS "cuentaReferencia" FROM telegram_vinculos WHERE "usuarioId"=%s',(user["id"],))
+        link=cur.fetchone()
+        cur.execute('''SELECT pref."salaId",pref."pausadoHasta" FROM telegram_preferencias_salas pref
+            JOIN salas s ON s.id=pref."salaId" JOIN pisos p ON p.id=s."pisoId"
+            JOIN edificios ed ON ed.id=p."edificioId"
+            WHERE pref."usuarioId"=%s AND s."retiradoEn" IS NULL AND p."retiradoEn" IS NULL
+            AND ed."retiradoEn" IS NULL AND (%s OR ed.id=ANY(%s::text[])) ORDER BY pref."salaId"''',
+            (user["id"],user["rol"]=="ADMIN",user.get("assignedEdificios") or []))
+        rooms=cur.fetchall()
     return {"vinculo":link,"salas":[r["salaId"] for r in rooms],
             "pausas":{r["salaId"]:r["pausadoHasta"].isoformat() for r in rooms if r["pausadoHasta"] and r["pausadoHasta"] > datetime.now(timezone.utc)}}
 
