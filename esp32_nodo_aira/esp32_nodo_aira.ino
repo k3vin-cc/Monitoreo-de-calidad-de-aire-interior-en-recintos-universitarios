@@ -1419,9 +1419,117 @@ uint16_t colorForScore(int score, const String &estado) {
   }
 }
 
+#if DISPLAY_VARIANT == 190
+/**
+ * Nombre   : drawReading190
+ * Razon    : Mantiene etiqueta y lectura dentro de los 170 pixeles disponibles.
+ * Entradas : Posicion vertical, etiqueta, lectura formateada, unidad y validez.
+ * Salida   : Una fila de lectura instantanea en la pantalla de 1,9 pulgadas.
+ * Efectos  : Solo modifica la imagen; no guarda ni transmite informacion.
+ */
+void drawReading190(int y, const char *label, const String &value,
+                    const char *unit, int score, bool valid) {
+  const uint16_t muted = displayRgb565(156, 182, 190);
+  tft.setTextSize(1);
+  tft.setCursor(12, y);
+  tft.setTextColor(muted);
+  tft.print(label);
+  tft.setCursor(63, y);
+  tft.setTextColor(valid ? colorForScore(score, "completo") : muted);
+  tft.print(valid ? value : "n/d");
+  if (valid) {
+    tft.setTextColor(muted);
+    tft.print(" ");
+    tft.print(unit);
+  }
+}
+
+/**
+ * Nombre   : drawDisplay190
+ * Razon    : Distribuye la misma informacion en el formato vertical 170x320.
+ * Entradas : Reloj monotono, ultima ventana y lecturas existentes del nodo.
+ * Salida   : Pantalla completa para ST7789 de 1,9 pulgadas, girada 180 grados.
+ * Efectos  : Solo dibujo; conserva sensores, reglas, almacenamiento y red.
+ * Extension: La composicion se mantiene junta para revisar sus coordenadas;
+ *            las cinco filas repetidas se dibujan con drawReading190.
+ */
+void drawDisplay190(unsigned long now) {
+  const uint16_t muted = displayRgb565(156, 182, 190);
+  const uint16_t card = displayRgb565(16, 35, 46);
+  const uint16_t amber = displayRgb565(255, 193, 90);
+  const uint16_t badge = colorForScore(lastEval.icgScore, lastEval.icgEstado);
+  tft.fillScreen(displayRgb565(7, 20, 28));
+  tft.setTextWrap(false);
+  tft.fillRect(0, 0, 170, 4, amber);
+  tft.setTextSize(1);
+  tft.setTextColor(muted);
+  tft.setCursor(12, 14);
+  tft.print("AIRA | NODO");
+  const uint16_t link = mqttConnected ? colorForScore(0, "completo")
+    : WiFi.status() == WL_CONNECTED ? amber : displayRgb565(255, 107, 107);
+  tft.fillCircle(154, 17, 3, link);
+  tft.fillRoundRect(10, 34, 150, 62, 5, card);
+  tft.fillRoundRect(10, 34, 5, 62, 2, badge);
+  tft.setCursor(22, 41);
+  tft.print("ESTADO GENERAL | ICG");
+  tft.setTextSize(4);
+  tft.setTextColor(displayRgb565(243, 250, 249));
+  tft.setCursor(20, 55);
+  const bool complete = lastEval.hasWindow && lastEval.icgEstado == "completo";
+  tft.print(complete ? String(lastEval.icgScore) : "--");
+  tft.setTextSize(1);
+  tft.setTextColor(badge);
+  tft.setCursor(74, 61);
+  if (!lastEval.hasWindow) tft.print("MUESTREO");
+  else if (complete) tft.print(lastEval.icgCategoria);
+  else tft.print(lastEval.icgEstado == "parcial" ? "PARCIAL" : "SIN DATOS");
+  if (complete && lastEval.celdaMatriz.length() > 0) {
+    tft.setCursor(74, 79);
+    tft.setTextColor(muted);
+    tft.print("M:");
+    tft.print(lastEval.celdaMatriz);
+  }
+  tft.setCursor(12, 108);
+  tft.setTextColor(colorForScore(lastEval.icaiScore, "completo"));
+  tft.print("ICAI ");
+  tft.print(lastEval.icaiScore >= 0 ? String(lastEval.icaiScore) + " " + lastEval.icaiCategoria : "-- SIN DATOS");
+  tft.setCursor(12, 124);
+  tft.setTextColor(colorForScore(lastEval.ictScore, "completo"));
+  tft.print("ICT  ");
+  tft.print(lastEval.ictScore >= 0 ? String(lastEval.ictScore) + " " + lastEval.ictCategoria : "-- SIN DATOS");
+  tft.drawFastHLine(12, 139, 146, displayRgb565(35, 65, 77));
+  const bool scdFresh = scd.valid && fresh(scd.atMs, now);
+  const bool pmsFresh = pms.valid && fresh(pms.atMs, now);
+  drawReading190(151, "CO2", String(scd.co2), "ppm", calcSeverityCo2(scd.co2), scdFresh);
+  drawReading190(175, "PM2.5", String(pms.pm25), "ug/m3", calcSeverityPm(pms.pm25, 15.0f), pmsFresh);
+  drawReading190(199, "PM10", String(pms.pm10), "ug/m3", calcSeverityPm(pms.pm10, 45.0f), pmsFresh);
+  drawReading190(223, "TEMP", String(scd.tempC, 1), "C", calcSeverityTemp(scd.tempC), scdFresh);
+  drawReading190(247, "HR", String(scd.rh, 0), "%", calcSeverityRh(scd.rh), scdFresh);
+  tft.fillRect(0, 276, 170, 44, card);
+  tft.setTextColor(muted);
+  tft.setCursor(12, 282);
+  if (!firstWindowDiscarded || awaitingUtcWindowStart) {
+    const unsigned long remaining = awaitingUtcWindowStart
+      ? static_cast<unsigned long>(utcWindowStartEpoch > time(nullptr) ? utcWindowStartEpoch - time(nullptr) : 0)
+      : (WINDOW_DURATION_MS > now - bootStartedMs ? WINDOW_DURATION_MS - (now - bootStartedMs) : 0) / 1000UL;
+    tft.printf("ESTABILIZANDO %lus", remaining);
+  } else tft.printf("MUESTRAS %d/%d", winAcc.totalTicks, WINDOW_MAX_SAMPLES);
+  tft.setCursor(12, 294);
+  tft.printf("BUFFER %d/%d", bufCount, BUFFER_CAPACITY);
+  tft.setCursor(12, 306);
+  tft.setTextColor(mqttConnected ? colorForScore(0, "completo") : amber);
+  tft.print(mqttConnected ? "MQTT OK" : "MQTT...");
+}
+#endif
+
 void drawDisplay(unsigned long now) {
   if (now - lastDisplayMs < DISPLAY_REFRESH_MS) return;
   lastDisplayMs = now;
+
+#if DISPLAY_VARIANT == 190
+  drawDisplay190(now);
+  return;
+#endif
 
   const uint16_t bgColor      = displayRgb565(7, 20, 28);
   const uint16_t cardColor    = displayRgb565(16, 35, 46);
@@ -1861,7 +1969,7 @@ void setup() {
 #else
   tft.init(170, 320);
 #endif
-  tft.setRotation(0);
+  tft.setRotation(2);  // Gira la imagen 180 grados para la orientacion fisica de la pantalla.
   tft.fillScreen(ST77XX_BLACK);
 
   // 2. Montar particion LittleFS para el buffer circular persistente

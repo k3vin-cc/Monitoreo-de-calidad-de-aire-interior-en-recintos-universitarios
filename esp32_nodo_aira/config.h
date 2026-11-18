@@ -11,7 +11,11 @@
 #endif
 
 // Identificacion y trazabilidad de reglas (RF-12)
-#define FIRMWARE_VERSION "v1.0.11.2"
+#if DISPLAY_VARIANT == 190
+#define FIRMWARE_VERSION "v1.0.11.3-190"
+#else
+#define FIRMWARE_VERSION "v1.0.11.3"
+#endif
 #define VERSION_REGLAS   "reglas-2026.1"
 
 // MODO DE PRUEBA RAPIDA:
