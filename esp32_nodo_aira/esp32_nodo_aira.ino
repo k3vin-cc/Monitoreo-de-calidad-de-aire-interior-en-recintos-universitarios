@@ -2118,12 +2118,6 @@ void setup() {
   reportDiagnosticPartition();
   probeDiagnosticStorage();
 #endif
-#if MODO_DIAGNOSTICO_190 == 1
-  Serial.println("[TEST] SOLO DIAGNOSTICO 1,9 pulgadas: muestras 2 s, ventanas 12 s, primera descartada.");
-  Serial.println("[TEST] ENVIO RAM: guarda pruebas en BD. No repara, formatea ni utiliza la cola LittleFS.");
-  reportDiagnosticPartition();
-  probeDiagnosticStorage();
-#endif
 
   // 3. Cargar configuracion NVS y metadatos del buffer
   loadConfigAndBufferMeta();
@@ -2155,12 +2149,14 @@ void loop() {
   processFiveMinuteWindow(now);
 
   // 4. Maquina de Estados Finitos de Conectividad y Resiliencia
+#if MODO_DIAGNOSTICO_190 == 1
+  // El envio RAM registra millis() despues de capturar now al inicio del loop.
+  // Refrescarlo evita un desbordamiento unsigned y un timeout de ACK inmediato.
+  now = millis();
+#endif
   runConnectivityFsm(now);
 
   if (mqttConnected && now - lastPresenceMs >= 60000UL) publishPresence();
-#if MODO_DIAGNOSTICO_190 == 1
-  reportDiagnosticState(now);
-#endif
 #if MODO_DIAGNOSTICO_190 == 1
   reportDiagnosticState(now);
 #endif

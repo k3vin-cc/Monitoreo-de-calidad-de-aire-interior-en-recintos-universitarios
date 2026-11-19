@@ -18,7 +18,7 @@
 #error "El diagnostico requiere la pantalla de 1,9 pulgadas (DISPLAY_VARIANT=190)"
 #endif
 #if MODO_DIAGNOSTICO_190 == 1
-#define FIRMWARE_VERSION "v1.0.11.3-190-T1"
+#define FIRMWARE_VERSION "v1.0.11.3-190-T2"
 #define VERSION_REGLAS   "test-12s-190"
 #elif DISPLAY_VARIANT == 190
 #define FIRMWARE_VERSION "v1.0.11.3-190"
