@@ -21,7 +21,7 @@
 #define FIRMWARE_VERSION "v1.0.11.3-190-T2"
 #define VERSION_REGLAS   "test-12s-190"
 #elif DISPLAY_VARIANT == 190
-#define FIRMWARE_VERSION "v1.0.11.3-190"
+#define FIRMWARE_VERSION "v1.0.11.4-190"
 #define VERSION_REGLAS   "reglas-2026.1"
 #else
 #define FIRMWARE_VERSION "v1.0.11.3"

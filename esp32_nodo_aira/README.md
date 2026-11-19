@@ -14,7 +14,9 @@ Si un arranque ocurre sin NTP, cada ventana conserva una sesión y tiempo transc
 
 ### Pantalla ST7789 de 1,9 pulgadas
 
-Para la pantalla de **170×320**, cambia `DISPLAY_VARIANT` a `190` en `config.h` antes de compilar. El firmware se identifica como **v1.0.11.3-190** y distribuye los mismos índices y lecturas en una columna, con giro de 180°. Conserva los pines SPI: SCK=18, MOSI=23, RST=25, DC=26 y CS=27. La variante `154` conserva su distribución de 240×240 y la versión `v1.0.11.3`. Usa una placa ESP32 en Arduino IDE; Arduino Uno no corresponde al microcontrolador del nodo. Las credenciales se pueden aprovisionar desde la web y no deben incorporarse al código distribuido.
+Para la pantalla de **170×320**, cambia `DISPLAY_VARIANT` a `190` en `config.h` antes de compilar. El firmware normal se identifica como **v1.0.11.4-190** y distribuye los mismos índices y lecturas en una columna, con giro de 180°. Conserva los pines SPI: SCK=18, MOSI=23, RST=25, DC=26 y CS=27. La variante `154` conserva su distribución de 240×240 y la versión `v1.0.11.3`. Usa una placa ESP32 en Arduino IDE; Arduino Uno no corresponde al microcontrolador del nodo. Las credenciales se pueden aprovisionar desde la web y no deben incorporarse al código distribuido.
+
+La version normal `v1.0.11.4-190` recompila el flujo de produccion: diagnostico y prueba rapida desactivados, muestreo de 10 s, ventanas de 300 s alineadas a UTC y minimo de 24 de 30 muestras. Conserva la estabilizacion inicial, presencia de 60 s y guardado previo en LittleFS hasta PUBACK; no utiliza el envio RAM del TEST ni cambia compensaciones. La primera ventana verificable aparece normalmente entre 10 y 15 minutos desde el arranque si NTP se obtiene pronto. Requiere montaje correcto de LittleFS; esta version no formatea ni repara una particion fallida.
 
 ### Firmware de diagnostico rapido para 1,9 pulgadas
 
