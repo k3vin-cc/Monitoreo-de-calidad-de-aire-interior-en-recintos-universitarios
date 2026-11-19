@@ -36,6 +36,14 @@
 
 #include "config.h"
 #include "secrets.h"
+#if MODO_DIAGNOSTICO_190 == 1
+#include <esp_partition.h>
+uint32_t testWindowsGenerated = 0;
+uint32_t testPacketsSent = 0;
+volatile uint32_t testAckCount = 0;
+bool testFsWriteOk = false;
+unsigned long testReportMs = 0;
+#endif
 
 #if DISPLAY_VARIANT != 154 && DISPLAY_VARIANT != 190
 #error "DISPLAY_VARIANT debe ser 154 o 190"
@@ -1018,6 +1026,11 @@ void loadConfigAndBufferMeta() {
 
   seqOrdenRegistro    = prefs.getUInt("seq_order", 0);
   ventanasDescartadas = prefs.getUInt("win_drop",  0);
+#if MODO_DIAGNOSTICO_190 == 1
+  // El diagnostico usa RAM y no recupera, vacia ni cambia la cola de produccion.
+  bufHead = bufTail = bufCount = 0;
+  return;
+#endif
   bufHead             = prefs.getInt("buf_head",   0);
   bufTail             = prefs.getInt("buf_tail",   0);
   bufCount            = prefs.getInt("buf_count",  0);
@@ -1232,6 +1245,11 @@ static void mqttEventHandler(void *handler_args, esp_event_base_t base, int32_t 
     case MQTT_EVENT_PUBLISHED:
       if (event->msg_id == pendingMsgId) {
         pendingAckReceived = true;
+#if MODO_DIAGNOSTICO_190 == 1
+        testAckCount = testAckCount + 1;
+        Serial.printf("[TEST][ACK] Telemetria aceptada por el broker: msg_id=%d, total=%lu. Falta confirmar BD.\n",
+                      event->msg_id, static_cast<unsigned long>(testAckCount));
+#endif
       } else if (event->msg_id == presenceMsgId) {
         presenceMsgId = -1;
       } else if (event->msg_id == presenceReplyMsgId) {
@@ -1318,6 +1336,86 @@ bool publishQos1Packet(const String &payload, bool fromBuffer) {
 }
 
 // -----------------------------------------------------------------------------
+#if MODO_DIAGNOSTICO_190 == 1
+/**
+ * Nombre   : reportDiagnosticPartition
+ * Razon    : Identifica la particion que LittleFS intenta montar en este ESP32.
+ * Entradas : Tabla de particiones del dispositivo, consultada por el SDK.
+ * Salida   : Etiqueta, direccion y capacidad en el monitor serie.
+ * Efectos  : Ninguno; solo lectura, sin formatear ni volcar contenido.
+ */
+void reportDiagnosticPartition() {
+  const esp_partition_t *part = esp_partition_find_first(
+    ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
+  if (!part) {
+    Serial.println("[TEST][PARTICION] No existe la particion spiffs para LittleFS.");
+    return;
+  }
+  Serial.printf("[TEST][PARTICION] etiqueta=%s direccion=0x%lx capacidad=%lu bytes\n",
+                part->label, static_cast<unsigned long>(part->address),
+                static_cast<unsigned long>(part->size));
+}
+
+/**
+ * Nombre   : probeDiagnosticStorage
+ * Razon    : Distingue fallo de montaje de fallo de escritura o lectura.
+ * Entradas : Resultado de LittleFS.begin(false) y archivo reservado de prueba.
+ * Salida   : testFsWriteOk y detalle del resultado por serie.
+ * Efectos  : Crea y elimina solo su archivo de prueba si no existia previamente.
+ */
+void probeDiagnosticStorage() {
+  if (!littleFsReady) {
+    Serial.println("[TEST][FS] ERROR DE MONTAJE. Se probara envio RAM; no se formatea la memoria.");
+    return;
+  }
+  const char *path = "/aira_test_190.tmp";
+  if (LittleFS.exists(path)) {
+    Serial.println("[TEST][FS] Archivo de prueba ya existente; no se sobrescribe.");
+    return;
+  }
+  File file = LittleFS.open(path, "w");
+  if (!file) {
+    Serial.println("[TEST][FS] Error abriendo el archivo de prueba.");
+    return;
+  }
+  const String text = "AIRA_TEST_190_" + String(millis());
+  const size_t written = file.print(text);
+  file.close();
+  file = LittleFS.open(path, "r");
+  const bool readOk = file && file.readString() == text;
+  if (file) file.close();
+  const bool removed = LittleFS.remove(path);
+  testFsWriteOk = written == text.length() && readOk && removed;
+  Serial.printf("[TEST][FS] escritura=%s lectura=%s limpieza=%s capacidad=%lu usados=%lu\n",
+    written == text.length() ? "OK" : "ERROR", readOk ? "OK" : "ERROR",
+    removed ? "OK" : "ERROR", static_cast<unsigned long>(LittleFS.totalBytes()),
+    static_cast<unsigned long>(LittleFS.usedBytes()));
+}
+
+/**
+ * Nombre   : reportDiagnosticState
+ * Razon    : Hace observable la diferencia entre conexion, envio y confirmacion.
+ * Entradas : Reloj monotono, conectividad, lecturas actuales y contadores RAM.
+ * Salida   : Resumen cada cinco segundos, sin credenciales.
+ * Efectos  : Actualiza solo el temporizador del informe; no cambia sensores.
+ */
+void reportDiagnosticState(unsigned long now) {
+  if (now - testReportMs < 5000UL) return;
+  testReportMs = now;
+  Serial.printf("[TEST][ESTADO] segundos=%lu estado=%s MQTT=%s FS=%s escrituraFS=%s ventanas=%lu enviados=%lu ACK=%lu pendiente=%d\n",
+    now / 1000UL, fsmStateName(fsmState), mqttConnected ? "OK" : "NO",
+    littleFsReady ? "MONTADO" : "ERROR", testFsWriteOk ? "OK" : "NO",
+    static_cast<unsigned long>(testWindowsGenerated), static_cast<unsigned long>(testPacketsSent),
+    static_cast<unsigned long>(testAckCount), pendingMsgId);
+  const bool scdFresh = scd.valid && fresh(scd.atMs, now);
+  const bool pmsFresh = pms.valid && fresh(pms.atMs, now);
+  Serial.printf("[TEST][SENSORES] CO2=%s ppm TEMP=%s C HR=%s %% PM2.5=%s PM10=%s ug/m3\n",
+    scdFresh ? String(scd.co2).c_str() : "n/d", scdFresh ? String(scd.tempC, 2).c_str() : "n/d",
+    scdFresh ? String(scd.rh, 2).c_str() : "n/d", pmsFresh ? String(pms.pm25).c_str() : "n/d",
+    pmsFresh ? String(pms.pm10).c_str() : "n/d");
+}
+#endif
+
 // 8. APROVISIONAMIENTO POR PUERTO SERIE USB
 // -----------------------------------------------------------------------------
 // Extrae el valor de una clave string en un objeto JSON simple {"key":"val"}
@@ -1464,7 +1562,11 @@ void drawDisplay190(unsigned long now) {
   tft.setTextSize(1);
   tft.setTextColor(muted);
   tft.setCursor(12, 14);
+#if MODO_DIAGNOSTICO_190 == 1
+  tft.print("AIRA | TEST 12S");
+#else
   tft.print("AIRA | NODO");
+#endif
   const uint16_t link = mqttConnected ? colorForScore(0, "completo")
     : WiFi.status() == WL_CONNECTED ? amber : displayRgb565(255, 107, 107);
   tft.fillCircle(154, 17, 3, link);
@@ -1508,6 +1610,13 @@ void drawDisplay190(unsigned long now) {
   tft.fillRect(0, 276, 170, 44, card);
   tft.setTextColor(muted);
   tft.setCursor(12, 282);
+#if MODO_DIAGNOSTICO_190 == 1
+  tft.setTextColor(testFsWriteOk ? muted : amber);
+  tft.print(!littleFsReady ? "RAM | FS ERROR" : testFsWriteOk ? "RAM | FS OK" : "RAM | FS ESCR ERROR");
+  tft.setCursor(12, 294);
+  tft.printf("ENV %lu ACK %lu", static_cast<unsigned long>(testPacketsSent),
+             static_cast<unsigned long>(testAckCount));
+#else
   if (!firstWindowDiscarded || awaitingUtcWindowStart) {
     const unsigned long remaining = awaitingUtcWindowStart
       ? static_cast<unsigned long>(utcWindowStartEpoch > time(nullptr) ? utcWindowStartEpoch - time(nullptr) : 0)
@@ -1516,6 +1625,7 @@ void drawDisplay190(unsigned long now) {
   } else tft.printf("MUESTRAS %d/%d", winAcc.totalTicks, WINDOW_MAX_SAMPLES);
   tft.setCursor(12, 294);
   tft.printf("BUFFER %d/%d", bufCount, BUFFER_CAPACITY);
+#endif
   tft.setCursor(12, 306);
   tft.setTextColor(mqttConnected ? colorForScore(0, "completo") : amber);
   tft.print(mqttConnected ? "MQTT OK" : "MQTT...");
@@ -1764,11 +1874,15 @@ void runConnectivityFsm(unsigned long now) {
       if (getLocalTime(&timeinfo, 200)) {
         time_t epoch = time(nullptr);
         if (epoch >= 1700000000L) {
+#if MODO_DIAGNOSTICO_190 != 1
           if (!ntpSynced) scheduleUtcWindowStart(epoch, now);
+#endif
           ntpSynced     = true;
           lastNtpSyncMs = now;
+#if MODO_DIAGNOSTICO_190 != 1
           saveTimeAnchor(epoch, esp_timer_get_time());
           removeUnusedTimeAnchor(bootSession);
+#endif
           Serial.printf("[NTP] Reloj UTC sincronizado: %04d-%02d-%02d %02d:%02d:%02dZ\n",
                         timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
                         timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
@@ -1816,12 +1930,14 @@ void runConnectivityFsm(unsigned long now) {
       }
 
       // Si hay ventanas retenidas en LittleFS y el canal esta libre, retransmitir en orden FIFO (RF-09)
+#if MODO_DIAGNOSTICO_190 != 1
       if (firstWindowDiscarded && mqttConnected && pendingMsgId == -1 && bufCount > 0) {
         String oldestJson;
         if (peekOldestBufferedWindow(oldestJson)) {
           publishQos1Packet(oldestJson, true);
         }
       }
+#endif
 
       // Resincronizacion horaria NTP cada 1 hora (RF-11)
       if (now - lastNtpSyncMs >= NTP_SYNC_INTERVAL_MS) {
@@ -1858,6 +1974,11 @@ void runConnectivityFsm(unsigned long now) {
 // -----------------------------------------------------------------------------
 void processFiveMinuteWindow(unsigned long now) {
   time_t closingEpoch = 0;
+#if MODO_DIAGNOSTICO_190 == 1
+  // Etiqueta UTC real de cierre: una ventana de 12 s no usa bordes de 5 min.
+  if (now - lastWindowCloseMs < WINDOW_DURATION_MS) return;
+  if (ntpSynced) closingEpoch = time(nullptr);
+#else
   if (ntpSynced) {
     const time_t currentEpoch = time(nullptr);
     if (currentEpoch < 1700000000L) {
@@ -1901,6 +2022,7 @@ void processFiveMinuteWindow(unsigned long now) {
   } else if (now - lastWindowCloseMs < WINDOW_DURATION_MS) {
     return;
   }
+#endif
   const unsigned long elapsedMs = now - lastWindowCloseMs;
   lastWindowCloseMs = now;
 
@@ -1937,12 +2059,27 @@ void processFiveMinuteWindow(unsigned long now) {
   lastPmsChecksumErrors = pmsChecksumErrors;
   lastPmsRangeErrors = pmsRangeErrors;
   lastScdReadErrors = scdReadErrors;
+#if MODO_DIAGNOSTICO_190 == 1
+  ++testWindowsGenerated;
+  Serial.println("[TEST 12S] Paquete de prueba generado; se guardara en BD si lo acepta la API:");
+#else
   Serial.println("[VENTANA 5M] Paquete generado:");
+#endif
   Serial.println(payload);
 
+#if MODO_DIAGNOSTICO_190 == 1
+  // Solo diagnostico: permite separar el fallo LittleFS de la entrega MQTT.
+  if (publishQos1Packet(payload, false)) {
+    ++testPacketsSent;
+    Serial.println("[TEST][ENVIO] Ventana enviada desde RAM sin persistencia local. Esperando PUBACK.");
+  } else {
+    Serial.println("[TEST][ENVIO] No enviada: falta conexion MQTT o hay un PUBACK pendiente. No se retiene en RAM.");
+  }
+#else
   // Persistir primero: una publicación aceptada por el cliente MQTT todavía
   // puede terminar sin PUBACK. La ventana sólo sale de LittleFS al confirmarse.
   enqueueWindowToLittleFS(payload);
+#endif
 }
 
 // -----------------------------------------------------------------------------
@@ -1975,6 +2112,18 @@ void setup() {
   // 2. Montar particion LittleFS para el buffer circular persistente
   littleFsReady = LittleFS.begin(false);
   Serial.println(littleFsReady ? "[FS] LittleFS montado correctamente" : "[FS] Error montando LittleFS");
+#if MODO_DIAGNOSTICO_190 == 1
+  Serial.println("[TEST] SOLO DIAGNOSTICO 1,9 pulgadas: muestra 2 s, ventana 12 s, primer paquete desde unos 24 s con red.");
+  Serial.println("[TEST] Datos reales de prueba en BD, sin calibracion completa ni retencion offline. No cambia el offset del SCD40.");
+  reportDiagnosticPartition();
+  probeDiagnosticStorage();
+#endif
+#if MODO_DIAGNOSTICO_190 == 1
+  Serial.println("[TEST] SOLO DIAGNOSTICO 1,9 pulgadas: muestras 2 s, ventanas 12 s, primera descartada.");
+  Serial.println("[TEST] ENVIO RAM: guarda pruebas en BD. No repara, formatea ni utiliza la cola LittleFS.");
+  reportDiagnosticPartition();
+  probeDiagnosticStorage();
+#endif
 
   // 3. Cargar configuracion NVS y metadatos del buffer
   loadConfigAndBufferMeta();
@@ -2009,6 +2158,12 @@ void loop() {
   runConnectivityFsm(now);
 
   if (mqttConnected && now - lastPresenceMs >= 60000UL) publishPresence();
+#if MODO_DIAGNOSTICO_190 == 1
+  reportDiagnosticState(now);
+#endif
+#if MODO_DIAGNOSTICO_190 == 1
+  reportDiagnosticState(now);
+#endif
 
   // 5. Tarea temporizada: Refresco de pantalla TFT cada 5 s
   drawDisplay(now);

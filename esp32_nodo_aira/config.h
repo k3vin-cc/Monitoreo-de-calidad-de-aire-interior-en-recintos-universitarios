@@ -11,18 +11,31 @@
 #endif
 
 // Identificacion y trazabilidad de reglas (RF-12)
-#if DISPLAY_VARIANT == 190
+#ifndef MODO_DIAGNOSTICO_190
+#define MODO_DIAGNOSTICO_190 0
+#endif
+#if MODO_DIAGNOSTICO_190 == 1 && DISPLAY_VARIANT != 190
+#error "El diagnostico requiere la pantalla de 1,9 pulgadas (DISPLAY_VARIANT=190)"
+#endif
+#if MODO_DIAGNOSTICO_190 == 1
+#define FIRMWARE_VERSION "v1.0.11.3-190-T1"
+#define VERSION_REGLAS   "test-12s-190"
+#elif DISPLAY_VARIANT == 190
 #define FIRMWARE_VERSION "v1.0.11.3-190"
+#define VERSION_REGLAS   "reglas-2026.1"
 #else
 #define FIRMWARE_VERSION "v1.0.11.3"
-#endif
 #define VERSION_REGLAS   "reglas-2026.1"
+#endif
 
 // MODO DE PRUEBA RAPIDA:
 //   0 = Operacion oficial segun main.tex: muestreo cada 10 s (N=30), ventana de 5 min (300 s), n_min=24 (80 %)
 //   1 = Prueba rapida de laboratorio: muestreo cada 2 s (N=6), ventana cada 12 s, n_min=5
 #ifndef MODO_PRUEBA_RAPIDA
-#define MODO_PRUEBA_RAPIDA 0
+#define MODO_PRUEBA_RAPIDA MODO_DIAGNOSTICO_190
+#endif
+#if MODO_DIAGNOSTICO_190 == 1 && MODO_PRUEBA_RAPIDA != 1
+#error "El diagnostico requiere ventanas de prueba rapida"
 #endif
 
 #if MODO_PRUEBA_RAPIDA == 1
