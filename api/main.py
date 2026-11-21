@@ -34,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool, PoolTimeout, TooManyRequests
 from psycopg.types.json import Jsonb
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -56,7 +57,20 @@ if not JWT_SECRET:
     log.warning("JWT_SECRET_KEY no está configurada; los endpoints de autenticación rechazarán solicitudes")
 
 
+db_pool = ConnectionPool(
+    kwargs=dict(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
+                connect_timeout=5, row_factory=dict_row),
+    min_size=2, max_size=6, timeout=1.5, max_waiting=16, open=False,
+)
+
+
 def db():
+    """Presta una conexión por operación y la devuelve tras commit o rollback."""
+    return db_pool.connection()
+
+
+def ingestion_db():
+    """Abre una conexión de ingesta independiente del tráfico web."""
     return psycopg.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, connect_timeout=5, row_factory=dict_row)
 
 
@@ -406,7 +420,7 @@ def persist_packet(raw: dict[str, Any]):
         raise ValueError("ventanaInicio posterior a ventanaFinReal")
     if packet.subniveles and any(level is not None and not 0 <= level <= 4 for level in packet.subniveles.values()):
         raise ValueError("subnivel fuera de 0..4")
-    with db() as conn, conn.cursor() as cur:
+    with ingestion_db() as conn, conn.cursor() as cur:
         # Lock the node until telemetry commits so retirement cannot race a packet
         # that passed validation just before the node was retired.
         cur.execute('SELECT id, "salaId", "retiradoEn" FROM nodos WHERE id=%s FOR UPDATE', (packet.nodo_id,))
@@ -1410,6 +1424,7 @@ async def telegram_polling():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global mqtt_client, telegram_task, presence_task
+    db_pool.open()
     hub.loop = asyncio.get_running_loop()
     FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
     if MQTT_PASSWORD:
@@ -1430,14 +1445,17 @@ async def lifespan(app: FastAPI):
         telegram_task = asyncio.create_task(telegram_polling())
     else:
         log.info("Bot de Telegram desactivado: TELEGRAM_BOT_TOKEN está vacío")
-    yield
-    if presence_task:
-        presence_task.cancel()
-    if telegram_task:
-        telegram_task.cancel()
-    if mqtt_client:
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
+    try:
+        yield
+    finally:
+        tasks = [task for task in (presence_task, telegram_task) if task]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if mqtt_client:
+            await asyncio.to_thread(mqtt_client.loop_stop)
+            mqtt_client.disconnect()
+        await asyncio.to_thread(db_pool.close)
 
 
 app = FastAPI(title="Calidad del Aire API", version="1.0.0", lifespan=lifespan,
@@ -1496,13 +1514,18 @@ def session_from_token(token: str):
         return {"id": "guest", "nombre": "Invitado", "email": None, "telefono": None, "rol": "GUEST",
                 "estado": "activo", "assignedEdificios": [], "sessionId": None,
                 "tokenExpiresAt": datetime.fromtimestamp(expires, timezone.utc), "guestSession": True}
-    row = fetch_one('''SELECT u.id,u.nombre,u.email,u.telefono,u.rol,u.estado,u."assignedEdificios",s.id AS "sessionId"
-        FROM sesiones_usuario s JOIN usuarios u ON u.id=s."usuarioId"
-        WHERE s.id=%s AND s."usuarioId"=%s AND s.revocada=FALSE AND s."expiraEn">NOW() AND u.estado='activo' ''',
-        (payload.get("sid"), payload.get("sub")))
-    if not row:
-        raise HTTPException(401, "Sesión revocada o cuenta inactiva")
-    execute('UPDATE sesiones_usuario SET "ultimaActividadEn"=NOW() WHERE id=%s', (row["sessionId"],))
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT u.id,u.nombre,u.email,u.telefono,u.rol,u.estado,u."assignedEdificios",s.id AS "sessionId"
+            FROM sesiones_usuario s JOIN usuarios u ON u.id=s."usuarioId"
+            WHERE s.id=%s AND s."usuarioId"=%s AND s.revocada=FALSE AND s."expiraEn">NOW() AND u.estado='activo' ''',
+            (payload.get("sid"), payload.get("sub")))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(401, "Sesión revocada o cuenta inactiva")
+        cur.execute('''UPDATE sesiones_usuario SET "ultimaActividadEn"=NOW()
+            WHERE id=%s AND revocada=FALSE
+            AND "ultimaActividadEn" <= NOW()-INTERVAL '1 minute'
+            ''', (row["sessionId"],))
     row["tokenExpiresAt"] = datetime.fromtimestamp(payload["exp"], timezone.utc)
     return row
 
@@ -1696,6 +1719,19 @@ def retire_location(entity: str, entity_id: str, user, borrar_historial: bool = 
     return {"id": entity_id, "tipo": entity, "retiradoEn": retired["retiradoEn"],
             "ubicacion": context, "descendientes": descendants, "historial": history,
             "historialEliminado": borrar_historial, "nodosDesasignados": unassigned_nodes}
+
+
+@app.exception_handler(PoolTimeout)
+@app.exception_handler(TooManyRequests)
+async def database_busy(request: Request, exc: Exception):
+    """Traduce una espera agotada del pool en una respuesta temporal sin detalles internos."""
+    return JSONResponse(status_code=503, content={"detail": "Base de datos ocupada. Intenta nuevamente."})
+
+
+@app.get("/livez")
+async def livez():
+    """Comprueba que el proceso HTTP responde sin consultar servicios externos."""
+    return {"status": "ok"}
 
 
 @app.get("/healthz")
